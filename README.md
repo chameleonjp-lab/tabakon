@@ -25,8 +25,10 @@ game_slug: `tabakon`
 - 種別: ベストスコア型 `best`
 - 小数: なし
 - 送信: クリア、失敗、リタイア、マイナススコアを含め、ゲーム終了時に自動で1回だけ送信
-- 使用想定: `public.games`, `public.game_scores`, `get_best_score_ranking`, `get_game_play_stats`
-- 禁止: 旧ランキングテーブル、管理者用キー、サーバー用キー
+- Supabase URL: 共通設定 `https://mlpnjgezrnhdxsxolyzj.supabase.co`
+- 送信: `submit_score` RPC（`/rest/v1/rpc/submit_score`）
+- 取得: `get_best_score_ranking` RPC（`display_name` / `rank_no` 対応）
+- 禁止: `/rest/v1/game_scores` への直接insert、旧ランキングテーブル、管理者用キー、サーバー用キー
 
 ## ファイル構成
 
@@ -50,3 +52,5 @@ game_slug: `tabakon`
 - npm、Vite、ビルド環境は不要です。
 - 名前は `localStorage` の `tabakon_player_name` に保存しますが、公式ランキングのスコア本体は保存しません。
 - SupabaseにはPublishable keyのみを記載しています。
+- Canvasの48×72グリッドは固定セルサイズではなく、Canvas実サイズから算出した `CELL_W` / `CELL_H` で描画と判定を揃えます。
+- RESULT後は `stopLoop()` で描画ループを停止します。
