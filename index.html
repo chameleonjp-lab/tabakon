@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>たばコン</title>
   <style>
-    :root{--bg:#fff7db;--ink:#2f2417;--accent:#f08b36;--dark:#2a1f2d;--sand:#d9aa56;--panel:#fffdf5;--danger:#3a1634;--ok:#2f8f68}*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;min-height:100%;overflow-x:hidden;background:linear-gradient(180deg,#fff7dc,#ffe5aa);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation}body{display:flex;justify-content:center}.app{width:min(100vw,430px);min-height:100dvh;padding:10px 10px max(12px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px}.screen{display:none}.screen.active{display:block}.card{background:rgba(255,253,245,.94);border:3px solid #6c4422;border-radius:22px;box-shadow:0 10px 0 rgba(108,68,34,.2);padding:16px}h1{font-size:clamp(36px,12vw,54px);margin:8px 0;text-align:center;letter-spacing:.06em}h2{margin:4px 0 12px;font-size:26px}.lead{text-align:center;font-weight:800;font-size:18px}.btn,button,a.btn{width:100%;min-height:46px;border:0;border-radius:16px;background:linear-gradient(180deg,#ffb13e,#f07b28);color:#fff;font-weight:900;font-size:17px;text-decoration:none;display:flex;align-items:center;justify-content:center;margin:8px 0;box-shadow:0 5px 0 #a84a1e}.btn.secondary{background:linear-gradient(180deg,#4dbb8f,#237b64);box-shadow:0 5px 0 #175342}.btn.ghost{background:#fff;border:2px solid #6c4422;color:#4d321d;box-shadow:none}input{width:100%;font-size:18px;min-height:46px;border:2px solid #6c4422;border-radius:14px;padding:8px 12px;background:#fff}small,.note{display:block;color:#6b5948;line-height:1.55}.hud{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;align-items:center}.hud .pill{background:#fffdf5;border:2px solid #6c4422;border-radius:12px;padding:7px 4px;text-align:center;font-weight:900;font-size:14px}.retire{font-size:13px;min-height:36px;margin:0;border-radius:12px;box-shadow:0 3px 0 #6a241c;background:linear-gradient(180deg,#ef6a63,#b53d35)}#gameCanvas{display:block;width:100%;height:auto;aspect-ratio:2/3;border:3px solid #5b3a1f;border-radius:18px;background:#90cef2;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}#gameWrap{position:relative}#countdown{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:96px;font-weight:1000;color:#fff;text-shadow:0 6px 0 #6c4422,0 0 18px #f08b36;pointer-events:none}.status{min-height:22px;text-align:center;font-weight:800}.result-score{font-size:34px;text-align:center;font-weight:1000}.bad-comment{font-size:12px;line-height:1.5;background:#2a1730;color:#fff;border-radius:12px;padding:8px;margin:6px 0;word-break:break-all}.ranking{background:#fff;border:2px dashed #6c4422;border-radius:14px;padding:10px;min-height:72px}.ranking ol{margin:6px 0 0;padding-left:24px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.hide{display:none!important}ul{padding-left:1.2em;line-height:1.7}@media(max-width:340px){.app{padding:6px}.card{padding:12px}.hud .pill{font-size:12px}.btn,button,a.btn{font-size:15px;min-height:44px}}
+    :root{--bg:#fff7db;--ink:#2f2417;--accent:#f08b36;--dark:#2a1f2d;--sand:#d9aa56;--panel:#fffdf5;--danger:#3a1634;--ok:#2f8f68}*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{margin:0;min-height:100%;overflow-x:hidden;background:linear-gradient(180deg,#fff7dc,#ffe5aa);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:manipulation}body{display:flex;justify-content:center}.app{width:min(100vw,430px);min-height:100dvh;padding:10px 10px max(12px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px}.screen{display:none}.screen.active{display:block}.card{background:rgba(255,253,245,.94);border:3px solid #6c4422;border-radius:22px;box-shadow:0 10px 0 rgba(108,68,34,.2);padding:16px}h1{font-size:clamp(36px,12vw,54px);margin:8px 0;text-align:center;letter-spacing:.06em}h2{margin:4px 0 12px;font-size:26px}.lead{text-align:center;font-weight:800;font-size:18px}.btn,button,a.btn{width:100%;min-height:46px;border:0;border-radius:16px;background:linear-gradient(180deg,#ffb13e,#f07b28);color:#fff;font-weight:900;font-size:17px;text-decoration:none;display:flex;align-items:center;justify-content:center;margin:8px 0;box-shadow:0 5px 0 #a84a1e}.btn.secondary{background:linear-gradient(180deg,#4dbb8f,#237b64);box-shadow:0 5px 0 #175342}.btn.ghost{background:#fff;border:2px solid #6c4422;color:#4d321d;box-shadow:none}input{width:100%;font-size:18px;min-height:46px;border:2px solid #6c4422;border-radius:14px;padding:8px 12px;background:#fff}small,.note{display:block;color:#6b5948;line-height:1.55}.hud{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;align-items:center}.hud .pill{background:#fffdf5;border:2px solid #6c4422;border-radius:12px;padding:7px 4px;text-align:center;font-weight:900;font-size:14px}.retire{font-size:13px;min-height:36px;margin:0;border-radius:12px;box-shadow:0 3px 0 #6a241c;background:linear-gradient(180deg,#ef6a63,#b53d35)}#gameCanvas{display:block;width:100%;height:auto;aspect-ratio:2/3;border:3px solid #5b3a1f;border-radius:18px;background:#90cef2;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}#gameWrap{position:relative}#countdown{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:96px;font-weight:1000;color:#fff;text-shadow:0 6px 0 #6c4422,0 0 18px #f08b36;pointer-events:none}.status{min-height:22px;text-align:center;font-weight:800}.result-score{font-size:34px;text-align:center;font-weight:1000}.bad-comment{font-size:12px;line-height:1.5;background:#2a1730;color:#fff;border-radius:12px;padding:8px;margin:6px 0;word-break:break-all}.ranking{background:#fff;border:2px dashed #6c4422;border-radius:14px;padding:10px;min-height:72px}.ranking ol{margin:6px 0 0;padding-left:24px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.hide{display:none!important}.rule-list{padding-left:1.2em;line-height:1.7}.type-list{display:grid;gap:8px;margin:10px 0}.type-card{background:#fff;border:2px solid #e1b366;border-radius:12px;padding:9px 10px;font-size:15px;line-height:1.45}.type-card b{font-size:16px}.danger-note{background:#2a1730;color:#fff;border:2px solid #ff4d4d;border-radius:12px;padding:10px;line-height:1.55;font-weight:800}@media(max-width:340px){.app{padding:6px}.card{padding:12px}.hud .pill{font-size:12px}.btn,button,a.btn{font-size:15px;min-height:44px}}
   </style>
 </head>
 <body>
@@ -23,14 +23,14 @@
 
     <section id="ruleScreen" class="screen card">
       <h2>ルール</h2>
-      <ul><li>指で砂を削り、道を作ります。</li><li>🚬を🦊へ届けます。</li><li>20個届ければ成功です。</li><li>トラップに落ちると失います。</li><li>色付き🚬は点数や動きが違います。</li><li>60秒以内に高スコアを狙います。</li></ul>
+      <ul class="rule-list"><li>指で砂を削り、道を作ります。</li><li>30個の🚬を🦊へ届けます。20個届ければ成功です。</li><li>60秒以内に高スコアを狙います。</li><li>ステージは10種類から開始ごとにランダムで選ばれます。</li></ul><h3>🚬の種類</h3><div class="type-list"><div class="type-card"><b>白っぽい🚬：1000点</b><br>標準の動き。まずはこれを🦊へ届けよう。</div><div class="type-card"><b>赤い🚬：1500点</b><br>重くて落ちやすいが、横に転がりにくい。</div><div class="type-card"><b>青い🚬：1300点</b><br>軽くて跳ねやすい。バーや回転障害物で動きやすい。</div><div class="type-card"><b>黒い🚬：1700点</b><br>高得点。ただし危険ゾーンに近づくと失いやすい。</div></div><div class="danger-note">危険ゾーンに🚬が入ると失います。黒い🚬は危険ゾーンに近いだけでも失いやすいので注意。</div>
       <button id="backHomeBtn" class="btn secondary">戻る</button>
     </section>
 
     <section id="gameScreen" class="screen">
       <div class="hud"><div id="timeHud" class="pill">残り 60.0</div><div id="deliveredHud" class="pill">届けた 0/20</div><button id="retireBtn" class="retire">リタイア</button></div>
       <div id="gameWrap"><canvas id="gameCanvas" width="320" height="480"></canvas><div id="countdown">3</div></div>
-      <div id="statusHud" class="status">砂を削って🚬を🦊へ届けよう</div>
+      <div id="stageHud" class="status">ステージ：---</div><div id="statusHud" class="status">砂を削って🚬を🦊へ届けよう</div>
       <small class="note">Canvas上はスワイプしてもページが動きません。黒い沼や危険エリアに注意。</small>
     </section>
 
@@ -38,7 +38,7 @@
       <h2 id="resultTitle">結果</h2>
       <div id="resultScore" class="result-score">0点</div>
       <div id="badComment" class="bad-comment hide">ｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀﾈｯﾄﾔﾒﾛｲﾝﾀｰﾈｯﾄﾊｱｸﾀﾞｲﾝﾀｰﾈｯﾄﾊﾊﾞｶﾆﾅﾙｲﾝﾀｰﾈｯﾄﾊﾉｳｦｵｾﾝｽﾙｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀ...</div>
-      <div class="grid2"><div id="resultDelivered">届けた 0</div><div id="resultLost">失った 0</div><div id="resultTime">残り 0.0秒</div><div id="rankingStatus">ランキング送信中…</div></div>
+      <div id="resultStage" class="ranking">ステージ：---</div><div class="grid2"><div id="resultDelivered">届けた 0</div><div id="resultLost">失った 0</div><div id="resultTime">残り 0.0秒</div><div id="rankingStatus">ランキング送信中…</div></div>
       <div id="scoreBreakdown" class="ranking">内訳を計算中…</div>
       <h3>ランキング</h3><div id="rankingBox" class="ranking">読み込み中…</div>
       <button id="retryBtn" class="btn">もう一度</button><button id="resultShareBtn" class="btn secondary">結果をシェア</button>
@@ -87,43 +87,88 @@
   const cellCenterX = cellX => cellX * CELL_W + CELL_W / 2;
   const cellCenterY = cellY => cellY * CELL_H + CELL_H / 2;
 
-  // 4. ステージ定義（上層・中層・下層の3層構造）
-  const STAGE_RECTS = [
-    { kind: 'wall', x: 0, y: 0, w: 2, h: 72 },
-    { kind: 'wall', x: 46, y: 0, w: 2, h: 72 },
-    { kind: 'wall', x: 0, y: 70, w: 48, h: 2 },
-    { kind: 'sand', x: 2, y: 13, w: 44, h: 17, note: '上層：最初に削る柔らかい砂' },
-    { kind: 'sand', x: 4, y: 28, w: 16, h: 27, note: '中層：左の安全ルート' },
-    { kind: 'sand', x: 20, y: 30, w: 8, h: 25, note: '中層：中央ゲートルート' },
-    { kind: 'sand', x: 29, y: 27, w: 15, h: 29, note: '中層：右の高得点ルート' },
-    { kind: 'sand', x: 14, y: 56, w: 20, h: 12, note: '下層：ゴール前に最後に削る砂' },
-    { kind: 'wall', x: 2, y: 31, w: 10, h: 2 },
-    { kind: 'wall', x: 33, y: 31, w: 13, h: 2 },
-    { kind: 'wall', x: 3, y: 57, w: 13, h: 2 },
-    { kind: 'wall', x: 32, y: 57, w: 13, h: 2 },
-    { kind: 'wall', x: 12, y: 66, w: 5, h: 2 },
-    { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
-  ];
-  const STAGE_CARVES = [
-    { x: 24, y: 14, rx: 126, ry: 14, note: '🚬初期配置の空間' },
-    { x: 12, y: 23, rx: 28, ry: 26, note: '上層左へ少し流れる導線' },
-    { x: 35, y: 23, rx: 30, ry: 26, note: '上層右へ少し流れる導線' },
-    { x: 11, y: 46, rx: 33, ry: 78, note: '左：安全だが遠回り' },
-    { x: 24, y: 43, rx: 20, ry: 74, note: '中央：速いがバーとゲート' },
-    { x: 38, y: 43, rx: 30, ry: 72, note: '右：黒🚬高得点と危険' },
-    { x: 24, y: 64, rx: 42, ry: 28, note: '下層：ゴール前の受け皿' }
-  ];
-  const STAGE_TRAPS = [
-    { x: 24, y: 300, w: 78, h: 26, type: 'pit' },
-    { x: 260, y: 250, w: 62, h: 34, type: 'danger' },
-    { x: 212, y: 342, w: 45, h: 24, type: 'danger' },
-    { x: 54, y: 390, w: 72, h: 30, type: 'swamp' }
-  ];
-  const STAGE_MECHANISMS = [
-    { kind: 'bar', x: 78, y: 208, w: 88, h: 10, min: 58, max: 194, speed: 48, dir: 1 },
-    { kind: 'gate', x: 154, y: 272, w: 14, h: 58, t: 0, open: false },
-    { kind: 'rotor', x: 255, y: 295, len: 78, angle: -0.4, speed: 2.2 },
-    { kind: 'bar', x: 150, y: 365, w: 84, h: 10, min: 116, max: 258, speed: 44, dir: -1 }
+  // 4. ステージ定義（10種類から開始ごとにランダム選択）
+  const STAGES = [
+  { name: 'ステージ1：三つ道', shortName: '三つ道', rects: [
+      { kind: 'wall', x: 0, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 46, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 0, y: 70, w: 48, h: 2 },
+      { kind: 'sand', x: 2, y: 13, w: 44, h: 17 }, { kind: 'sand', x: 4, y: 28, w: 16, h: 27 }, { kind: 'sand', x: 20, y: 30, w: 8, h: 25 }, { kind: 'sand', x: 29, y: 27, w: 15, h: 29 }, { kind: 'sand', x: 14, y: 56, w: 20, h: 12 },
+      { kind: 'wall', x: 2, y: 31, w: 10, h: 2 }, { kind: 'wall', x: 33, y: 31, w: 13, h: 2 }, { kind: 'wall', x: 3, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 32, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 12, y: 66, w: 5, h: 2 }, { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
+    ], carves: [
+      { x: 24, y: 14, rx: 126, ry: 14 }, { x: 12, y: 23, rx: 28, ry: 26 }, { x: 35, y: 23, rx: 30, ry: 26 },
+      { x: 11, y: 46, rx: 33, ry: 78 }, { x: 24, y: 43, rx: 20, ry: 74 }, { x: 38, y: 43, rx: 30, ry: 72 }, { x: 24, y: 64, rx: 46, ry: 30 }
+    ], traps: [{ x:24,y:300,w:78,h:26,type:'pit'},{ x:260,y:250,w:54,h:34,type:'danger'},{ x:212,y:342,w:45,h:24,type:'danger'},{ x:54,y:390,w:72,h:30,type:'swamp'}], mechanisms: [{ kind:'bar',x:78,y:208,w:88,h:10,min:58,max:194,speed:48,dir:1},{ kind:'gate',x:154,y:272,w:14,h:58,t:0,open:false},{ kind:'rotor',x:255,y:295,len:78,angle:-0.4,speed:2.2},{ kind:'bar',x:150,y:365,w:84,h:10,min:116,max:258,speed:44,dir:-1}], goal: { x: 132, y: 410, w: 94, h: 52 } },
+  { name: 'ステージ2：左安全路', shortName: '左安全路', rects: [
+      { kind: 'wall', x: 0, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 46, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 0, y: 70, w: 48, h: 2 },
+      { kind: 'sand', x: 2, y: 13, w: 44, h: 17 }, { kind: 'sand', x: 4, y: 28, w: 16, h: 27 }, { kind: 'sand', x: 20, y: 30, w: 8, h: 25 }, { kind: 'sand', x: 29, y: 27, w: 15, h: 29 }, { kind: 'sand', x: 14, y: 56, w: 20, h: 12 },
+      { kind: 'wall', x: 2, y: 31, w: 10, h: 2 }, { kind: 'wall', x: 33, y: 31, w: 13, h: 2 }, { kind: 'wall', x: 3, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 32, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 12, y: 66, w: 5, h: 2 }, { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
+    ], carves: [
+      { x: 24, y: 14, rx: 126, ry: 14 }, { x: 12, y: 23, rx: 28, ry: 26 }, { x: 35, y: 23, rx: 30, ry: 26 },
+      { x: 11, y: 46, rx: 33, ry: 78 }, { x: 24, y: 43, rx: 20, ry: 74 }, { x: 38, y: 43, rx: 30, ry: 72 }, { x: 24, y: 64, rx: 46, ry: 30 }
+    ], traps: [{ x:242,y:228,w:70,h:38,type:'danger'},{ x:226,y:345,w:58,h:28,type:'danger'}], mechanisms: [{ kind:'bar',x:74,y:238,w:92,h:10,min:50,max:190,speed:38,dir:1}], goal: { x: 132, y: 410, w: 94, h: 52 } },
+  { name: 'ステージ3：中央ゲート', shortName: '中央ゲート', rects: [
+      { kind: 'wall', x: 0, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 46, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 0, y: 70, w: 48, h: 2 },
+      { kind: 'sand', x: 2, y: 13, w: 44, h: 17 }, { kind: 'sand', x: 4, y: 28, w: 16, h: 27 }, { kind: 'sand', x: 20, y: 30, w: 8, h: 25 }, { kind: 'sand', x: 29, y: 27, w: 15, h: 29 }, { kind: 'sand', x: 14, y: 56, w: 20, h: 12 },
+      { kind: 'wall', x: 2, y: 31, w: 10, h: 2 }, { kind: 'wall', x: 33, y: 31, w: 13, h: 2 }, { kind: 'wall', x: 3, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 32, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 12, y: 66, w: 5, h: 2 }, { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
+    ], carves: [
+      { x: 24, y: 14, rx: 126, ry: 14 }, { x: 12, y: 23, rx: 28, ry: 26 }, { x: 35, y: 23, rx: 30, ry: 26 },
+      { x: 11, y: 46, rx: 33, ry: 78 }, { x: 24, y: 43, rx: 20, ry: 74 }, { x: 38, y: 43, rx: 30, ry: 72 }, { x: 24, y: 64, rx: 46, ry: 30 }
+    ], traps: [{ x:28,y:330,w:64,h:24,type:'pit'},{ x:238,y:350,w:54,h:28,type:'danger'}], mechanisms: [{ kind:'gate',x:154,y:238,w:14,h:72,t:0,open:false},{ kind:'bar',x:110,y:354,w:94,h:10,min:86,max:232,speed:36,dir:1}], goal: { x: 132, y: 410, w: 94, h: 52 } },
+  { name: 'ステージ4：右高得点路', shortName: '右高得点路', rects: [
+      { kind: 'wall', x: 0, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 46, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 0, y: 70, w: 48, h: 2 },
+      { kind: 'sand', x: 2, y: 13, w: 44, h: 17 }, { kind: 'sand', x: 4, y: 28, w: 16, h: 27 }, { kind: 'sand', x: 20, y: 30, w: 8, h: 25 }, { kind: 'sand', x: 29, y: 27, w: 15, h: 29 }, { kind: 'sand', x: 14, y: 56, w: 20, h: 12 },
+      { kind: 'wall', x: 2, y: 31, w: 10, h: 2 }, { kind: 'wall', x: 33, y: 31, w: 13, h: 2 }, { kind: 'wall', x: 3, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 32, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 12, y: 66, w: 5, h: 2 }, { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
+    ], carves: [
+      { x: 24, y: 14, rx: 126, ry: 14 }, { x: 12, y: 23, rx: 28, ry: 26 }, { x: 35, y: 23, rx: 30, ry: 26 },
+      { x: 11, y: 46, rx: 33, ry: 78 }, { x: 24, y: 43, rx: 20, ry: 74 }, { x: 38, y: 43, rx: 30, ry: 72 }, { x: 24, y: 64, rx: 46, ry: 30 }
+    ], traps: [{ x:244,y:220,w:64,h:36,type:'danger'},{ x:250,y:305,w:58,h:34,type:'danger'},{ x:214,y:374,w:46,h:26,type:'swamp'}], mechanisms: [{ kind:'rotor',x:246,y:286,len:70,angle:0.2,speed:1.8},{ kind:'bar',x:84,y:350,w:86,h:10,min:64,max:200,speed:42,dir:1}], goal: { x: 132, y: 410, w: 94, h: 52 } },
+  { name: 'ステージ5：二段バー', shortName: '二段バー', rects: [
+      { kind: 'wall', x: 0, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 46, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 0, y: 70, w: 48, h: 2 },
+      { kind: 'sand', x: 2, y: 13, w: 44, h: 17 }, { kind: 'sand', x: 4, y: 28, w: 16, h: 27 }, { kind: 'sand', x: 20, y: 30, w: 8, h: 25 }, { kind: 'sand', x: 29, y: 27, w: 15, h: 29 }, { kind: 'sand', x: 14, y: 56, w: 20, h: 12 },
+      { kind: 'wall', x: 2, y: 31, w: 10, h: 2 }, { kind: 'wall', x: 33, y: 31, w: 13, h: 2 }, { kind: 'wall', x: 3, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 32, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 12, y: 66, w: 5, h: 2 }, { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
+    ], carves: [
+      { x: 24, y: 14, rx: 126, ry: 14 }, { x: 12, y: 23, rx: 28, ry: 26 }, { x: 35, y: 23, rx: 30, ry: 26 },
+      { x: 11, y: 46, rx: 33, ry: 78 }, { x: 24, y: 43, rx: 20, ry: 74 }, { x: 38, y: 43, rx: 30, ry: 72 }, { x: 24, y: 64, rx: 46, ry: 30 }
+    ], traps: [{ x:30,y:350,w:58,h:24,type:'pit'},{ x:236,y:350,w:58,h:24,type:'danger'}], mechanisms: [{ kind:'bar',x:72,y:220,w:94,h:10,min:52,max:210,speed:46,dir:1},{ kind:'bar',x:154,y:332,w:92,h:10,min:112,max:268,speed:42,dir:-1}], goal: { x: 132, y: 410, w: 94, h: 52 } },
+  { name: 'ステージ6：広い受け皿', shortName: '広い受け皿', rects: [
+      { kind: 'wall', x: 0, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 46, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 0, y: 70, w: 48, h: 2 },
+      { kind: 'sand', x: 2, y: 13, w: 44, h: 17 }, { kind: 'sand', x: 4, y: 28, w: 16, h: 27 }, { kind: 'sand', x: 20, y: 30, w: 8, h: 25 }, { kind: 'sand', x: 29, y: 27, w: 15, h: 29 }, { kind: 'sand', x: 14, y: 56, w: 20, h: 12 },
+      { kind: 'wall', x: 2, y: 31, w: 10, h: 2 }, { kind: 'wall', x: 33, y: 31, w: 13, h: 2 }, { kind: 'wall', x: 3, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 32, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 12, y: 66, w: 5, h: 2 }, { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
+    ], carves: [
+      { x: 24, y: 14, rx: 126, ry: 14 }, { x: 12, y: 23, rx: 28, ry: 26 }, { x: 35, y: 23, rx: 30, ry: 26 },
+      { x: 11, y: 46, rx: 33, ry: 78 }, { x: 24, y: 43, rx: 20, ry: 74 }, { x: 38, y: 43, rx: 30, ry: 72 }, { x: 24, y: 64, rx: 46, ry: 30 }
+    ], traps: [{ x:24,y:310,w:50,h:22,type:'pit'},{ x:258,y:310,w:46,h:22,type:'danger'}], mechanisms: [{ kind:'bar',x:88,y:260,w:120,h:10,min:64,max:256,speed:30,dir:1}], goal: { x: 112, y: 404, w: 116, h: 58 } },
+  { name: 'ステージ7：細い通路', shortName: '細い通路', rects: [
+      { kind: 'wall', x: 0, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 46, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 0, y: 70, w: 48, h: 2 },
+      { kind: 'sand', x: 2, y: 13, w: 44, h: 17 }, { kind: 'sand', x: 4, y: 28, w: 16, h: 27 }, { kind: 'sand', x: 20, y: 30, w: 8, h: 25 }, { kind: 'sand', x: 29, y: 27, w: 15, h: 29 }, { kind: 'sand', x: 14, y: 56, w: 20, h: 12 },
+      { kind: 'wall', x: 2, y: 31, w: 10, h: 2 }, { kind: 'wall', x: 33, y: 31, w: 13, h: 2 }, { kind: 'wall', x: 3, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 32, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 12, y: 66, w: 5, h: 2 }, { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
+    ], carves: [
+      { x: 24, y: 14, rx: 126, ry: 14 }, { x: 12, y: 23, rx: 28, ry: 26 }, { x: 35, y: 23, rx: 30, ry: 26 },
+      { x: 11, y: 46, rx: 33, ry: 78 }, { x: 24, y: 43, rx: 20, ry: 74 }, { x: 38, y: 43, rx: 30, ry: 72 }, { x: 24, y: 64, rx: 46, ry: 30 }
+    ], traps: [{ x:42,y:286,w:54,h:24,type:'pit'},{ x:246,y:286,w:52,h:24,type:'danger'},{ x:40,y:390,w:46,h:22,type:'swamp'}], mechanisms: [{ kind:'gate',x:160,y:338,w:12,h:52,t:0,open:false},{ kind:'bar',x:92,y:246,w:82,h:10,min:70,max:214,speed:40,dir:1}], goal: { x: 132, y: 410, w: 94, h: 52 } },
+  { name: 'ステージ8：危険サンド', shortName: '危険サンド', rects: [
+      { kind: 'wall', x: 0, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 46, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 0, y: 70, w: 48, h: 2 },
+      { kind: 'sand', x: 2, y: 13, w: 44, h: 17 }, { kind: 'sand', x: 4, y: 28, w: 16, h: 27 }, { kind: 'sand', x: 20, y: 30, w: 8, h: 25 }, { kind: 'sand', x: 29, y: 27, w: 15, h: 29 }, { kind: 'sand', x: 14, y: 56, w: 20, h: 12 },
+      { kind: 'wall', x: 2, y: 31, w: 10, h: 2 }, { kind: 'wall', x: 33, y: 31, w: 13, h: 2 }, { kind: 'wall', x: 3, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 32, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 12, y: 66, w: 5, h: 2 }, { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
+    ], carves: [
+      { x: 24, y: 14, rx: 126, ry: 14 }, { x: 12, y: 23, rx: 28, ry: 26 }, { x: 35, y: 23, rx: 30, ry: 26 },
+      { x: 11, y: 46, rx: 33, ry: 78 }, { x: 24, y: 43, rx: 20, ry: 74 }, { x: 38, y: 43, rx: 30, ry: 72 }, { x: 24, y: 64, rx: 46, ry: 30 }
+    ], traps: [{ x:22,y:246,w:58,h:28,type:'danger'},{ x:240,y:246,w:58,h:28,type:'danger'},{ x:26,y:360,w:54,h:28,type:'swamp'},{ x:238,y:362,w:54,h:28,type:'danger'}], mechanisms: [{ kind:'bar',x:92,y:216,w:88,h:10,min:58,max:220,speed:44,dir:1},{ kind:'gate',x:154,y:316,w:14,h:48,t:0,open:false}], goal: { x: 132, y: 410, w: 94, h: 52 } },
+  { name: 'ステージ9：回転障害物', shortName: '回転障害物', rects: [
+      { kind: 'wall', x: 0, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 46, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 0, y: 70, w: 48, h: 2 },
+      { kind: 'sand', x: 2, y: 13, w: 44, h: 17 }, { kind: 'sand', x: 4, y: 28, w: 16, h: 27 }, { kind: 'sand', x: 20, y: 30, w: 8, h: 25 }, { kind: 'sand', x: 29, y: 27, w: 15, h: 29 }, { kind: 'sand', x: 14, y: 56, w: 20, h: 12 },
+      { kind: 'wall', x: 2, y: 31, w: 10, h: 2 }, { kind: 'wall', x: 33, y: 31, w: 13, h: 2 }, { kind: 'wall', x: 3, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 32, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 12, y: 66, w: 5, h: 2 }, { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
+    ], carves: [
+      { x: 24, y: 14, rx: 126, ry: 14 }, { x: 12, y: 23, rx: 28, ry: 26 }, { x: 35, y: 23, rx: 30, ry: 26 },
+      { x: 11, y: 46, rx: 33, ry: 78 }, { x: 24, y: 43, rx: 20, ry: 74 }, { x: 38, y: 43, rx: 30, ry: 72 }, { x: 24, y: 64, rx: 46, ry: 30 }
+    ], traps: [{ x:28,y:350,w:56,h:24,type:'pit'},{ x:244,y:350,w:54,h:26,type:'danger'}], mechanisms: [{ kind:'rotor',x:160,y:252,len:92,angle:0.4,speed:2.4},{ kind:'rotor',x:242,y:334,len:68,angle:-0.2,speed:-1.9}], goal: { x: 132, y: 410, w: 94, h: 52 } },
+  { name: 'ステージ10：総合', shortName: '総合', rects: [
+      { kind: 'wall', x: 0, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 46, y: 0, w: 2, h: 72 }, { kind: 'wall', x: 0, y: 70, w: 48, h: 2 },
+      { kind: 'sand', x: 2, y: 13, w: 44, h: 17 }, { kind: 'sand', x: 4, y: 28, w: 16, h: 27 }, { kind: 'sand', x: 20, y: 30, w: 8, h: 25 }, { kind: 'sand', x: 29, y: 27, w: 15, h: 29 }, { kind: 'sand', x: 14, y: 56, w: 20, h: 12 },
+      { kind: 'wall', x: 2, y: 31, w: 10, h: 2 }, { kind: 'wall', x: 33, y: 31, w: 13, h: 2 }, { kind: 'wall', x: 3, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 32, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 12, y: 66, w: 5, h: 2 }, { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
+    ], carves: [
+      { x: 24, y: 14, rx: 126, ry: 14 }, { x: 12, y: 23, rx: 28, ry: 26 }, { x: 35, y: 23, rx: 30, ry: 26 },
+      { x: 11, y: 46, rx: 33, ry: 78 }, { x: 24, y: 43, rx: 20, ry: 74 }, { x: 38, y: 43, rx: 30, ry: 72 }, { x: 24, y: 64, rx: 46, ry: 30 }
+    ], traps: [{ x:22,y:295,w:58,h:24,type:'pit'},{ x:246,y:244,w:58,h:30,type:'danger'},{ x:232,y:366,w:54,h:26,type:'swamp'}], mechanisms: [{ kind:'bar',x:70,y:214,w:86,h:10,min:54,max:198,speed:44,dir:1},{ kind:'gate',x:154,y:282,w:14,h:58,t:0,open:false},{ kind:'rotor',x:246,y:316,len:70,angle:0.1,speed:2.0},{ kind:'bar',x:148,y:370,w:90,h:10,min:116,max:268,speed:38,dir:-1}], goal: { x: 112, y: 404, w: 116, h: 58 } }
   ];
 
   // 5. 状態管理
@@ -135,6 +180,7 @@
   let particles = [];
   let brightMarks = [];
   let goal = { x: 132, y: 410, w: 94, h: 52 };
+  let currentStage = STAGES[0];
   let delivered = 0;
   let lost = 0;
   let deliveredScore = 0;
@@ -182,10 +228,12 @@
   function cellAt(px, py) { return { x: Math.floor(px / CELL_W), y: Math.floor(py / CELL_H) }; }
   function buildStage() {
     grid.fill(0);
-    for (const rect of STAGE_RECTS) fillRectCells(rect.x, rect.y, rect.w, rect.h, rect.kind === 'wall' ? 2 : 1);
-    for (const carve of STAGE_CARVES) carveEllipse(cellCenterX(carve.x), cellCenterY(carve.y), carve.rx, carve.ry, true);
-    traps = STAGE_TRAPS.map(t => ({ ...t }));
-    mechanisms = STAGE_MECHANISMS.map(m => ({ ...m }));
+    currentStage = STAGES[Math.floor(Math.random() * STAGES.length)];
+    for (const rect of currentStage.rects) fillRectCells(rect.x, rect.y, rect.w, rect.h, rect.kind === 'wall' ? 2 : 1);
+    for (const carve of currentStage.carves) carveEllipse(cellCenterX(carve.x), cellCenterY(carve.y), carve.rx, carve.ry, true);
+    traps = currentStage.traps.map(t => ({ ...t }));
+    mechanisms = currentStage.mechanisms.map(m => ({ ...m }));
+    goal = { ...currentStage.goal };
   }
 
   // 8. ゲーム初期化
@@ -468,13 +516,22 @@
   }
   function drawTraps() {
     for (const t of traps) {
-      ctx.fillStyle = t.type === 'swamp' ? '#211229' : '#5b1d31';
+      const pulse = 0.55 + Math.sin(performance.now() / 180) * 0.12;
+      const grad = ctx.createLinearGradient(t.x, t.y, t.x + t.w, t.y + t.h);
+      grad.addColorStop(0, t.type === 'swamp' ? '#120719' : '#23040b');
+      grad.addColorStop(1, t.type === 'swamp' ? '#4b1258' : '#70121c');
+      ctx.fillStyle = grad;
       roundRect(t.x, t.y, t.w, t.h, 7, true);
-      ctx.fillStyle = 'rgba(255,70,70,.45)';
-      roundRect(t.x + 4, t.y + 4, t.w - 8, t.h - 8, 5, true);
-      ctx.fillStyle = '#fff1';
-      ctx.font = '13px sans-serif';
-      ctx.fillText('危険', t.x + 12, t.y + 18);
+      ctx.strokeStyle = '#ff3333';
+      ctx.lineWidth = 3;
+      roundRect(t.x + 1.5, t.y + 1.5, t.w - 3, t.h - 3, 7, false, true);
+      ctx.fillStyle = 'rgba(255,40,40,' + pulse + ')';
+      roundRect(t.x + 5, t.y + 5, t.w - 10, t.h - 10, 5, true);
+      ctx.fillStyle = '#fff6e8';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(t.w >= 44 ? '危険' : '×', t.x + t.w / 2, t.y + Math.min(20, t.h - 7));
+      ctx.textAlign = 'start';
     }
   }
   function drawMechanisms() {
@@ -561,6 +618,7 @@
     $('timeHud').textContent = '残り ' + (remainingMs / 1000).toFixed(1);
     $('deliveredHud').textContent = '届けた ' + delivered + '/' + NEED;
     $('deliveredHud').style.transform = deliveredFlash > 0 ? 'scale(1.08)' : 'scale(1)';
+    $('stageHud').textContent = 'ステージ：' + currentStage.shortName + '　砂を削って🚬を🦊へ届けよう';
     $('statusHud').textContent = '届けた ' + delivered + ' / 失った ' + lost;
     $('statusHud').style.color = lostFlash > 0 ? '#5b1d75' : '';
   }
@@ -580,7 +638,7 @@
     if (state === STATES.RESULT) return;
     stopLoop();
     const breakdown = calculateBreakdown(reason);
-    resultData = { reason, score: breakdown.total, breakdown, delivered, lost, remainingMs: Math.max(0, remainingMs), playerName: $('playerName').value.trim() || 'ななし' };
+    resultData = { reason, score: breakdown.total, breakdown, delivered, lost, remainingMs: Math.max(0, remainingMs), playerName: $('playerName').value.trim() || 'ななし', stageName: currentStage.name };
     setState(STATES.RESULT);
     $('resultTitle').textContent = reason === 'clear' ? '結果：成功' : reason === 'retire' ? '結果：リタイア' : '結果：失敗';
     $('resultScore').textContent = breakdown.total + '点';
@@ -589,6 +647,7 @@
     $('resultDelivered').textContent = '届けた ' + delivered + '個';
     $('resultLost').textContent = '失った ' + lost + '個';
     $('resultTime').textContent = '残り ' + (resultData.remainingMs / 1000).toFixed(1) + '秒';
+    $('resultStage').textContent = 'ステージ：' + resultData.stageName;
     $('scoreBreakdown').innerHTML = '届けた点：' + breakdown.deliveredPoints.toLocaleString() + '点<br>' +
       '残り時間：' + breakdown.timeBonus.toLocaleString() + '点<br>' +
       '失ったペナルティ：-' + breakdown.lostPenalty.toLocaleString() + '点<br>' +
