@@ -51,4 +51,5 @@ game_slug: `tabakon`
 - 名前は `localStorage` の `tabakon_player_name` に保存しますが、公式ランキングのスコア本体は保存しません。
 - Supabaseには共通設定URLとPublishable keyのみを記載しています。
 - Canvasの48×72グリッドとステージ上の座標・サイズは、固定セルサイズではなくCanvasサイズから算出した `CELL_W` / `CELL_H` とセル換算値で扱います。
+- ゲーム本体の🚬/🦊表示は、GitHub保存時に絵文字が欠落しないようHTMLエンティティとJavaScript Unicode escapeで保持します。
 - RESULT後はゲームループを停止し、ランキング表示は `display_name` に対応します。

@@ -12,7 +12,7 @@
   <main class="app" aria-live="polite">
     <section id="homeScreen" class="screen active card">
       <h1>たばコン</h1>
-      <p class="lead">砂を削って、🚬を🦊へ届けるスマホ向けパズルゲームです。</p>
+      <p class="lead">砂を削って、&#x1F6AC;を&#x1F98A;へ届けるスマホ向けパズルゲームです。</p>
       <label>ランキング名（必須・10文字目安）<input id="playerName" maxlength="10" autocomplete="nickname" placeholder="なまえ"></label>
       <button id="startBtn" class="btn">ゲーム開始</button>
       <button id="ruleBtn" class="btn secondary">ルール説明</button>
@@ -23,14 +23,14 @@
 
     <section id="ruleScreen" class="screen card">
       <h2>ルール</h2>
-      <ul><li>指で砂を削り、道を作ります。</li><li>🚬を🦊へ届けます。</li><li>20個届ければ成功です。</li><li>トラップに落ちると失います。</li><li>色付き🚬は点数や動きが違います。</li><li>60秒以内に高スコアを狙います。</li></ul>
+      <ul><li>指で砂を削り、道を作ります。</li><li>&#x1F6AC;を&#x1F98A;へ届けます。</li><li>20個届ければ成功です。</li><li>トラップに落ちると失います。</li><li>色付き&#x1F6AC;は点数や動きが違います。</li><li>60秒以内に高スコアを狙います。</li></ul>
       <button id="backHomeBtn" class="btn secondary">戻る</button>
     </section>
 
     <section id="gameScreen" class="screen">
       <div class="hud"><div id="timeHud" class="pill">残り 60.0</div><div id="deliveredHud" class="pill">届けた 0/20</div><button id="retireBtn" class="retire">リタイア</button></div>
       <div id="gameWrap"><canvas id="gameCanvas" width="320" height="480"></canvas><div id="countdown">3</div></div>
-      <div id="statusHud" class="status">砂を削って🚬を🦊へ届けよう</div>
+      <div id="statusHud" class="status">砂を削って&#x1F6AC;を&#x1F98A;へ届けよう</div>
       <small class="note">Canvas上はスワイプしてもページが動きません。黒い沼や危険エリアに注意。</small>
     </section>
 
@@ -51,6 +51,7 @@
 'use strict';
 // 1. 定数
 const GAME_SLUG='tabakon', PUBLIC_URL='https://chameleonjp.codeberg.page/tabakon/', OTHER_GAMES_URL='https://chameleonjp.codeberg.page/chameleonjp_lab/';
+const CIG_EMOJI='\u{1F6AC}', FOX_EMOJI='\u{1F98A}';
 const TOTAL=30, NEED=20, LIMIT_MS=60000, GRID_W=48, GRID_H=72, MAX_PARTICLES=100;
 const STATES={HOME:'HOME',RULE:'RULE',READY:'READY',PLAYING:'PLAYING',RESULT:'RESULT',ERROR:'ERROR'};
 const TYPES={normal:{score:1000,color:'#f7e8c0',gravity:900,bounce:.22,roll:.985,nearTrap:false},red:{score:1500,color:'#ff615c',gravity:1040,bounce:.16,roll:.95,nearTrap:false},blue:{score:1300,color:'#54a8ff',gravity:850,bounce:.36,roll:1.02,nearTrap:false},black:{score:1700,color:'#222',gravity:930,bounce:.2,roll:.98,nearTrap:true}};
@@ -89,7 +90,7 @@ function carveEllipse(cx,cy,rx,ry){const minX=Math.floor((cx-rx)/CELL_W),maxX=Ma
 function carveSandAt(x,y){carveEllipse(x,y,cellSize(2.2),cellSize(2.2));spawnParticles(x,y,4,'#e6bd67');}
 function carveLine(a,b){const dx=b.x-a.x,dy=b.y-a.y,steps=Math.max(1,Math.ceil(Math.hypot(dx,dy)/cellSize(1)));for(let i=0;i<=steps;i++)carveSandAt(a.x+dx*i/steps,a.y+dy*i/steps);}
 function solidAt(px,py){if(px<0||py<0||px>=canvas.width||py>=canvas.height)return true;const c=cellAt(px,py),v=grid[idx(c.x,c.y)];return v===1||v===2;}
-// 9. 🚬の移動処理
+// 9. アイテムの移動処理
 function updateCigarettes(dt){for(const c of cigarettes){if(!c.active)continue;const cfg=TYPES[c.type];c.vy+=cfg.gravity*cellSize(.1)*dt;c.vx*=cfg.roll;c.x+=c.vx*dt;c.y+=c.vy*dt;resolveCollisions(c,cfg);c.angle+=c.vx*dt*.04;checkGoalAndTraps(c);}}
 // 10. 仕掛け更新
 function updateMechanisms(dt){for(const m of mechanisms){if(m.kind==='bar'){m.x+=m.speed*m.dir*dt;if(m.x<m.min||m.x+m.w>m.max){m.dir*=-1;m.x=Math.max(m.min,Math.min(m.x,m.max-m.w));}}else if(m.kind==='gate'){m.t+=dt;m.open=Math.sin(m.t*1.6)>0.15;}else if(m.kind==='rotor'){m.angle+=m.speed*dt;}}}
@@ -100,8 +101,8 @@ function distToSegment(px,py,x1,y1,x2,y2){const dx=x2-x1,dy=y2-y1,l=dx*dx+dy*dy;
 function checkGoalAndTraps(c){if(c.x>goal.x&&c.x<goal.x+goal.w&&c.y>goal.y&&c.y<goal.y+goal.h){c.active=false;c.delivered=true;delivered++;deliveredScore+=TYPES[c.type].score;spawnParticles(c.x,c.y,12,'#65d694');if(delivered>=NEED)finishGame('clear');return;}for(const t of traps){const margin=TYPES[c.type].nearTrap?16:0;if(c.x>t.x-margin&&c.x<t.x+t.w+margin&&c.y>t.y-margin&&c.y<t.y+t.h+margin){loseCig(c);return;}}}
 function loseCig(c){if(!c.active)return;c.active=false;c.lost=true;lost++;spawnParticles(c.x,c.y,10,'#2b1730');}
 // 12. 描画
-function draw(){ctx.clearRect(0,0,canvas.width,canvas.height);const g=ctx.createLinearGradient(0,0,0,canvas.height);g.addColorStop(0,'#8bd6ff');g.addColorStop(1,'#e4fff2');ctx.fillStyle=g;ctx.fillRect(0,0,canvas.width,canvas.height);for(let y=0;y<GRID_H;y++)for(let x=0;x<GRID_W;x++){const v=grid[idx(x,y)];if(!v)continue;ctx.fillStyle=v===1?'#d9aa56':'#6d4a2c';ctx.fillRect(gx(x),gy(y),CELL_W+.5,CELL_H+.5);}drawTraps();drawMechanisms();ctx.fillStyle='rgba(73,158,95,.25)';ctx.fillRect(goal.x,goal.y,goal.w,goal.h);ctx.font=cellSize(3.4)+'px serif';ctx.fillText('🦊',goal.x+cellSize(2.3),goal.y+cellSize(3.5));for(const c of cigarettes)if(c.active)drawCig(c);drawParticles();}
-function drawCig(c){ctx.save();ctx.translate(c.x,c.y);ctx.rotate(c.angle);ctx.beginPath();ctx.fillStyle=TYPES[c.type].color;ctx.globalAlpha=.85;ctx.arc(0,0,cellSize(1.2),0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;ctx.font=cellSize(1.6)+'px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('🚬',0,cellSize(.1));ctx.restore();}
+function draw(){ctx.clearRect(0,0,canvas.width,canvas.height);const g=ctx.createLinearGradient(0,0,0,canvas.height);g.addColorStop(0,'#8bd6ff');g.addColorStop(1,'#e4fff2');ctx.fillStyle=g;ctx.fillRect(0,0,canvas.width,canvas.height);for(let y=0;y<GRID_H;y++)for(let x=0;x<GRID_W;x++){const v=grid[idx(x,y)];if(!v)continue;ctx.fillStyle=v===1?'#d9aa56':'#6d4a2c';ctx.fillRect(gx(x),gy(y),CELL_W+.5,CELL_H+.5);}drawTraps();drawMechanisms();ctx.fillStyle='rgba(73,158,95,.25)';ctx.fillRect(goal.x,goal.y,goal.w,goal.h);ctx.font=cellSize(3.4)+'px serif';ctx.fillText(FOX_EMOJI,goal.x+cellSize(2.3),goal.y+cellSize(3.5));for(const c of cigarettes)if(c.active)drawCig(c);drawParticles();}
+function drawCig(c){ctx.save();ctx.translate(c.x,c.y);ctx.rotate(c.angle);ctx.beginPath();ctx.fillStyle=TYPES[c.type].color;ctx.globalAlpha=.85;ctx.arc(0,0,cellSize(1.2),0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;ctx.font=cellSize(1.6)+'px serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(CIG_EMOJI,0,cellSize(.1));ctx.restore();}
 function drawTraps(){for(const t of traps){ctx.fillStyle=t.type==='swamp'?'#211229':'#5b1d31';ctx.fillRect(t.x,t.y,t.w,t.h);ctx.fillStyle='rgba(255,70,70,.45)';ctx.fillRect(t.x+cellSize(.4),t.y+cellSize(.4),t.w-cellSize(.8),t.h-cellSize(.8));}}
 function drawMechanisms(){ctx.fillStyle='#7441a8';for(const m of mechanisms){if(m.kind==='bar'){ctx.fillStyle='#8d54cf';roundRect(m.x,m.y,m.w,m.h,cellSize(.5),true);}else if(m.kind==='gate'){ctx.fillStyle=m.open?'rgba(70,190,120,.35)':'#21537a';roundRect(m.x,m.y,m.w,m.h,cellSize(.4),true);}else{ctx.save();ctx.translate(m.x,m.y);ctx.rotate(m.angle);ctx.fillStyle='#cf6d2a';roundRect(-m.len/2,-cellSize(.5),m.len,cellSize(1),cellSize(.5),true);ctx.restore();}}}
 function roundRect(x,y,w,h,r,fill){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill)ctx.fill();}
@@ -122,8 +123,8 @@ async function submitScoreOnce(r){if(rankingSubmitted)return;rankingSubmitted=tr
 async function fetchRanking(){try{const data=await supa('/rest/v1/rpc/get_best_score_ranking',{method:'POST',headers:{Prefer:''},body:JSON.stringify({p_game_slug:GAME_SLUG,p_limit:10})});const list=Array.isArray(data)?data:[];$('rankingBox').innerHTML=list.length?'<ol>'+list.map((r,index)=>{const name=[r.display_name,r.player_name,r.name].find(Boolean)||'ななし';const score=r.score??r.best_score??r.first_score??0;const rank=r.rank_no||r.rank||index+1;return '<li>'+rank+'位 '+escapeHtml(name)+'：'+Number(score).toLocaleString()+'点</li>';}).join('')+'</ol>':'まだランキングがありません';}catch(e){$('rankingBox').textContent='ランキング取得に失敗しました';}}
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
 // 18. シェア
-function homeShareText(){return 'たばコン\n砂を削って、🚬を🦊へ届けよう！\n'+PUBLIC_URL;}
-function resultShareText(){const r=resultData;const line=r.reason==='clear'?'🚬を🦊へ届けた！':r.reason==='retire'?'途中であきらめた…':'🚬を🦊へ届けきれなかった…';return 'たばコン\n'+line+'\n配達スコア：'+r.score+'点\n'+PUBLIC_URL;}
+function homeShareText(){return 'たばコン\n砂を削って、'+CIG_EMOJI+'を'+FOX_EMOJI+'へ届けよう！\n'+PUBLIC_URL;}
+function resultShareText(){const r=resultData;const line=r.reason==='clear'?CIG_EMOJI+'を'+FOX_EMOJI+'へ届けた！':r.reason==='retire'?'途中であきらめた…':CIG_EMOJI+'を'+FOX_EMOJI+'へ届けきれなかった…';return 'たばコン\n'+line+'\n配達スコア：'+r.score+'点\n'+PUBLIC_URL;}
 async function shareText(text){try{if(navigator.share)await navigator.share({text});else await navigator.clipboard.writeText(text);}catch(e){console.warn('share failed',e);}}
 // 19. デバッグ
 window.tabakonDebug={getState:()=>state,finishGame,resetGame};
