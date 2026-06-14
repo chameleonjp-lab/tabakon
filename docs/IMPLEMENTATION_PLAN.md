@@ -23,7 +23,8 @@
 - 押しやすいボタン、名前入力、ズーム・長押し・スクロール誤作動対策を実装。
 
 ### ランキング担当
-- Supabase Publishable keyのみで `public.game_scores` と RPC を使う。
+- Supabase共通URLとPublishable keyのみで `submit_score` RPC とランキング取得RPCを使う。
+- `/rest/v1/game_scores` への直接insertは禁止する。
 - 終了時に自動で1回だけ送信し、結果画面に登録ボタンを置かない。
 
 ### 検査担当
@@ -67,7 +68,7 @@
 - `HOME`, `RULE`, `READY`, `PLAYING`, `RESULT`, `ERROR` を使う。
 - READYではカウントのみ行い、砂削り・物理・当たり判定・スコア加算を行わない。
 - PLAYING中のみゲーム処理を進める。
-- RESULTへ入ったらタイマー、当たり判定、仕掛け更新、スコア加算を止め、結果スコアを固定する。
+- RESULTへ入ったら `stopLoop()` で描画ループを止め、タイマー、当たり判定、仕掛け更新、スコア加算を止めて結果スコアを固定する。
 - `rankingSubmitted` で送信重複を防止する。
 
 ## 7. スコア計算
@@ -76,15 +77,16 @@
 点数は通常1000、赤1500、青1300、黒1700。マイナススコアも許可し送信する。
 
 ## 8. ランキング連携
-- Supabase URLと Publishable key のみを使う。
-- `public.game_scores` へ `game_slug`, `player_name`, `score`, `score_data` を送信する。
-- ベストランキングは `get_best_score_ranking` RPC、統計は `get_game_play_stats` RPC を想定する。
-- 通信失敗時は結果画面を維持し、ランキング欄のみ「ランキング送信に失敗しました」と表示する。
+- 共通Supabase URLと Publishable key のみを使う。
+- スコア送信は `submit_score` RPCへ `p_display_name`, `p_game_slug`, `p_score`, `p_client_version` を送る。
+- `/rest/v1/game_scores` への直接insertと `score_data` 送信は禁止する。
+- ベストランキングは `get_best_score_ranking` RPCを使い、表示名は `display_name` に対応する。
+- 通信失敗時は結果画面を維持し、送信失敗と取得失敗の表示を分ける。
 - ゲームループから通信処理を呼ばない。
 
 ## 9. 性能予算
 - 60fps目標、難しい場合でも30fpsで安定する設計。
-- 砂は48×72のセルグリッドで削れる地形として管理し、毎フレーム砂自体を大量移動しない。
+- 砂は48×72のセルグリッドで削れる地形として管理し、Canvasサイズから算出した `CELL_W` / `CELL_H` とセル換算値で、地形・初期配置・ゴール・トラップ・仕掛け・削り半径・描画サイズを統一して描画・判定する。毎フレーム砂自体を大量移動しない。
 - 🚬は最大30個、仕掛けは最大5個、トラップは最大6か所、パーティクルは最大100個。
 - ゲーム中のDOM更新は残り時間、届けた数、状態表示の3要素以内を中心にする。
 - パーティクル配列を再利用し、毎フレーム大量のオブジェクト生成を避ける。
