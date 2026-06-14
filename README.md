@@ -25,8 +25,8 @@ game_slug: `tabakon`
 - 種別: ベストスコア型 `best`
 - 小数: なし
 - 送信: クリア、失敗、リタイア、マイナススコアを含め、ゲーム終了時に自動で1回だけ送信
-- 使用想定: 共通Supabase URL、`submit_score` RPC、`get_best_score_ranking` RPC
-- 禁止: `/rest/v1/game_scores` への直接insert、旧ランキングテーブル、管理者用キー、サーバー用キー
+- 使用想定: `public.games`, `public.game_scores`, `get_best_score_ranking`, `get_game_play_stats`
+- 禁止: 旧ランキングテーブル、管理者用キー、サーバー用キー
 
 ## ファイル構成
 
@@ -49,6 +49,4 @@ game_slug: `tabakon`
 - ゲーム本体は `index.html` 1ファイルにHTML/CSS/JavaScriptをまとめています。
 - npm、Vite、ビルド環境は不要です。
 - 名前は `localStorage` の `tabakon_player_name` に保存しますが、公式ランキングのスコア本体は保存しません。
-- Supabaseには共通設定URLとPublishable keyのみを記載しています。
-- Canvasの48×72グリッドは、固定セルサイズではなくCanvasサイズから算出した `CELL_W` / `CELL_H` で扱います。
-- RESULT後はゲームループを停止し、ランキング表示は `display_name` に対応します。
+- SupabaseにはPublishable keyのみを記載しています。
