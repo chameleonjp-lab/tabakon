@@ -159,6 +159,60 @@
     makeStage('ステージ10：総合', '総合', 10)
   ];
 
+  function rectToWorld(rect) {
+    return { x: gx(rect.x), y: gy(rect.y), w: rect.w * CELL_W, h: rect.h * CELL_H };
+  }
+  function overlapWidth(a, b) {
+    return Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+  }
+  function overlaps(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+  function validateStageGoalAccess(stage) {
+    const goalRect = stage.goal;
+    const dangerZone = { x: goalRect.x - 8, y: goalRect.y - 140, w: goalRect.w + 16, h: 150 };
+    const warnings = [];
+    for (const rect of stage.rects) {
+      if (rect.kind !== 'wall') continue;
+      const worldRect = rectToWorld(rect);
+      const overlap = overlapWidth(worldRect, goalRect);
+      if (
+        overlaps(worldRect, dangerZone) &&
+        worldRect.w >= 60 &&
+        worldRect.h <= 20 &&
+        overlap >= goalRect.w * 0.45
+      ) {
+        warnings.push('ゴール直上を塞ぐ横長固定壁の可能性: ' + stage.name);
+      }
+    }
+    for (const m of stage.mechanisms) {
+      if (m.kind === 'bar') {
+        const barRect = { x: m.x, y: m.y, w: m.w, h: m.h };
+        const overlap = overlapWidth(barRect, goalRect);
+        if (
+          overlaps(barRect, dangerZone) &&
+          m.w >= 70 &&
+          m.h <= 16 &&
+          overlap >= goalRect.w * 0.35
+        ) {
+          warnings.push('ゴール直上を塞ぐ横長バーの可能性: ' + stage.name);
+        }
+      }
+      if (m.kind === 'gate' && m.w > m.h) {
+        const gateRect = { x: m.x, y: m.y, w: m.w, h: m.h };
+        if (overlaps(gateRect, dangerZone)) warnings.push('ゴール直上の横向きゲートの可能性: ' + stage.name);
+      }
+    }
+    return warnings;
+  }
+  function validateAllStages() {
+    const allWarnings = [];
+    for (const stage of STAGES) allWarnings.push(...validateStageGoalAccess(stage));
+    if (allWarnings.length) console.warn('[tabakon] stage goal access warnings', allWarnings);
+    return allWarnings;
+  }
+  validateAllStages();
+
   // 5. 状態管理
   let state = STATES.HOME;
   let grid = new Uint8Array(GRID_W * GRID_H);
@@ -775,7 +829,7 @@
   async function shareText(text) { try { if (navigator.share) await navigator.share({ text }); else await navigator.clipboard.writeText(text); } catch (e) { console.warn('share failed', e); } }
 
   // 20. デバッグ
-  window.tabakonDebug = { getState: () => state, finishGame, resetGame, showError };
+  window.tabakonDebug = { getState: () => state, finishGame, resetGame, showError, validateAllStages, validateStageGoalAccess };
 
   // 21. 起動処理
   function gameLoop(ts) {
