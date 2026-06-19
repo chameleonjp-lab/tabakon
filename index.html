@@ -12,7 +12,7 @@
   <main class="app" aria-live="polite">
     <section id="homeScreen" class="screen active card">
       <h1>たばコン</h1>
-      <p class="lead">砂を削って、🚬を🦊へ届けるスマホ向けパズルゲームです。</p>
+      <p class="lead">砂を削り、画面を上下に見ながら🚬を🦊へ届けるパズルゲームです。</p>
       <label>ランキング名（必須・10文字目安）<input id="playerName" maxlength="10" autocomplete="nickname" placeholder="なまえ"></label>
       <button id="startBtn" class="btn">ゲーム開始</button>
       <button id="ruleBtn" class="btn secondary">ルール説明</button>
@@ -23,14 +23,14 @@
 
     <section id="ruleScreen" class="screen card">
       <h2>ルール</h2>
-      <ul class="rule-list"><li>指で砂を削り、道を作ります。</li><li>30個の🚬を🦊へ届けます。20個届ければ成功です。</li><li>60秒以内に高スコアを狙います。</li><li>ステージは10種類から開始ごとにランダムで選ばれます。</li></ul><h3>🚬の種類</h3><div class="type-list"><div class="type-card"><b>白っぽい🚬：1000点</b><br>標準の動き。まずはこれを🦊へ届けよう。</div><div class="type-card"><b>赤い🚬：1500点</b><br>重くて落ちやすいが、横に転がりにくい。</div><div class="type-card"><b>青い🚬：1300点</b><br>軽くて跳ねやすい。バーや回転障害物で動きやすい。</div><div class="type-card"><b>黒い🚬：1700点</b><br>高得点。ただし危険ゾーンに近づくと失いやすい。</div></div><div class="danger-note">危険ゾーンに🚬が入ると失います。黒い🚬は危険ゾーンに近いだけでも失いやすいので注意。</div>
+      <ul class="rule-list"><li>指で砂を削り、道を作ります。</li><li>ステージは縦に長く、左のバーで上や下を見られます。</li><li>砂を削りながら画面を動かして、🚬を🦊へ届けましょう。</li><li>30個の🚬を🦊へ届けます。20個届ければ成功です。</li><li>60秒以内に高スコアを狙います。</li><li>ステージは10種類から開始ごとにランダムで選ばれます。</li></ul><h3>🚬の種類</h3><div class="type-list"><div class="type-card"><b>白っぽい🚬：1000点</b><br>標準の動き。まずはこれを🦊へ届けよう。</div><div class="type-card"><b>赤い🚬：1500点</b><br>重くて落ちやすいが、横に転がりにくい。</div><div class="type-card"><b>青い🚬：1300点</b><br>軽くて跳ねやすい。バーや回転障害物で動きやすい。</div><div class="type-card"><b>黒い🚬：1700点</b><br>高得点。ただし危険ゾーンに近づくと失いやすい。</div></div><div class="danger-note">危険ゾーンに🚬が入ると失います。黒い🚬は危険ゾーンに近いだけでも失いやすいので注意。</div>
       <button id="backHomeBtn" class="btn secondary">戻る</button>
     </section>
 
     <section id="gameScreen" class="screen">
       <div class="hud"><div id="timeHud" class="pill">残り 60.0</div><div id="deliveredHud" class="pill">届けた 0/20</div><button id="retireBtn" class="retire">リタイア</button></div>
       <div id="gameWrap"><canvas id="gameCanvas" width="320" height="480"></canvas><div id="countdown">3</div></div>
-      <div id="stageHud" class="status">ステージ：---</div><div id="statusHud" class="status">砂を削って🚬を🦊へ届けよう</div>
+      <div id="stageHud" class="status">ステージ：---</div><div id="statusHud" class="status">左バーで上下を見る / 砂を削って🚬を🦊へ届けよう</div>
       <small class="note">Canvas上はスワイプしてもページが動きません。黒い沼や危険エリアに注意。</small>
     </section>
 
@@ -59,7 +59,9 @@
   const NEED = 20;
   const LIMIT_MS = 60000;
   const GRID_W = 48;
-  const GRID_H = 72;
+  const GRID_H = 144;
+  const SCROLLBAR_W = 24;
+  const INPUT_MODE = { NONE: 'none', CARVE: 'carve', CAMERA: 'camera' };
   const MAX_PARTICLES = 100;
   const STATES = { HOME: 'HOME', RULE: 'RULE', READY: 'READY', PLAYING: 'PLAYING', RESULT: 'RESULT', ERROR: 'ERROR' };
   const TYPES = {
@@ -79,8 +81,12 @@
   const screens = { HOME: $('homeScreen'), RULE: $('ruleScreen'), READY: $('gameScreen'), PLAYING: $('gameScreen'), RESULT: $('resultScreen'), ERROR: $('errorScreen') };
   const canvas = $('gameCanvas');
   const ctx = canvas.getContext('2d');
-  const CELL_W = canvas.width / GRID_W;
-  const CELL_H = canvas.height / GRID_H;
+  const VIEW_W = canvas.width;
+  const VIEW_H = canvas.height;
+  const WORLD_W = canvas.width;
+  const WORLD_H = canvas.height * 2;
+  const CELL_W = WORLD_W / GRID_W;
+  const CELL_H = WORLD_H / GRID_H;
   const idx = (x, y) => y * GRID_W + x;
   const gx = cellX => cellX * CELL_W;
   const gy = cellY => cellY * CELL_H;
@@ -89,28 +95,63 @@
 
   // 4. ステージ定義（10種類から開始ごとにランダム選択）
   const COMMON_WALLS = [
-    { kind: 'wall', x: 0, y: 0, w: 2, h: 72 },
-    { kind: 'wall', x: 46, y: 0, w: 2, h: 72 },
-    { kind: 'wall', x: 0, y: 70, w: 48, h: 2 }
+    { kind: 'wall', x: 0, y: 0, w: 2, h: 144 },
+    { kind: 'wall', x: 46, y: 0, w: 2, h: 144 },
+    { kind: 'wall', x: 0, y: 142, w: 48, h: 2 }
   ];
-  const STAGES = [
-    { name: 'ステージ1：三つ道', shortName: '三つ道', rects: [
+  function makeStage(name, shortName, variant) {
+    const leftGoal = variant % 3 === 0;
+    const rightRisk = variant % 2 === 0;
+    const goalX = leftGoal ? 92 : variant % 3 === 1 ? 104 : 124;
+    const rects = [
       ...COMMON_WALLS,
-      { kind: 'sand', x: 2, y: 13, w: 44, h: 17 }, { kind: 'sand', x: 4, y: 28, w: 16, h: 27 }, { kind: 'sand', x: 20, y: 30, w: 8, h: 25 }, { kind: 'sand', x: 29, y: 27, w: 15, h: 29 }, { kind: 'sand', x: 14, y: 56, w: 20, h: 12 },
-      { kind: 'wall', x: 2, y: 31, w: 10, h: 2 }, { kind: 'wall', x: 33, y: 31, w: 13, h: 2 }, { kind: 'wall', x: 3, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 32, y: 57, w: 13, h: 2 }, { kind: 'wall', x: 12, y: 66, w: 5, h: 2 }, { kind: 'wall', x: 31, y: 66, w: 5, h: 2 }
-    ], carves: [
-      { x: 24, y: 14, rx: 126, ry: 14 }, { x: 12, y: 23, rx: 28, ry: 26 }, { x: 35, y: 23, rx: 30, ry: 26 },
-      { x: 11, y: 46, rx: 33, ry: 78 }, { x: 24, y: 43, rx: 20, ry: 74 }, { x: 38, y: 43, rx: 30, ry: 72 }, { x: 24, y: 64, rx: 46, ry: 30 }
-    ], traps: [{ x:24,y:300,w:78,h:26,type:'pit'},{ x:260,y:250,w:54,h:34,type:'danger'},{ x:212,y:342,w:45,h:24,type:'danger'},{ x:54,y:390,w:72,h:30,type:'swamp'}], mechanisms: [{ kind:'bar',x:78,y:208,w:88,h:10,min:58,max:194,speed:48,dir:1},{ kind:'gate',x:154,y:272,w:14,h:58,t:0,open:false},{ kind:'rotor',x:255,y:295,len:78,angle:-0.4,speed:2.2},{ kind:'bar',x:150,y:365,w:84,h:10,min:116,max:258,speed:44,dir:-1}], goal: { x: 132, y: 410, w: 94, h: 52 } },
-    { name: 'ステージ2：左安全路', shortName: '左安全路', rects: [...COMMON_WALLS, { kind:'sand', x:2, y:12, w:44, h:15 }, { kind:'sand', x:3, y:26, w:15, h:34 }, { kind:'wall', x:19, y:30, w:3, h:26 }, { kind:'sand', x:27, y:25, w:17, h:33 }, { kind:'sand', x:10, y:57, w:28, h:11 }, { kind:'wall', x:2, y:31, w:10, h:2 }, { kind:'wall', x:34, y:32, w:12, h:2 }], carves: [{ x:24, y:14, rx:126, ry:16 }, { x:9, y:43, rx:34, ry:98 }, { x:36, y:43, rx:24, ry:84 }, { x:24, y:64, rx:62, ry:32 }], traps: [{ x:232, y:220, w:70, h:38, type:'danger' }, { x:238, y:345, w:62, h:30, type:'danger' }], mechanisms: [{ kind:'bar', x:72, y:258, w:90, h:10, min:48, max:190, speed:34, dir:1 }], goal: { x:112, y:404, w:116, h:58 } },
-    { name: 'ステージ3：中央ゲート', shortName: '中央ゲート', rects: [...COMMON_WALLS, { kind:'sand', x:2, y:12, w:44, h:16 }, { kind:'sand', x:5, y:29, w:12, h:28 }, { kind:'sand', x:18, y:27, w:12, h:31 }, { kind:'sand', x:32, y:30, w:10, h:27 }, { kind:'sand', x:12, y:57, w:24, h:11 }, { kind:'wall', x:16, y:34, w:2, h:20 }, { kind:'wall', x:30, y:34, w:2, h:20 }], carves: [{ x:24, y:14, rx:126, ry:16 }, { x:24, y:43, rx:28, ry:98 }, { x:10, y:45, rx:26, ry:74 }, { x:38, y:45, rx:24, ry:74 }, { x:24, y:64, rx:60, ry:32 }], traps: [{ x:28, y:350, w:54, h:24, type:'pit' }, { x:242, y:350, w:52, h:26, type:'danger' }], mechanisms: [{ kind:'gate', x:152, y:226, w:18, h:82, t:0, open:false }, { kind:'bar', x:104, y:368, w:88, h:10, min:78, max:242, speed:30, dir:1 }], goal: { x:132, y:410, w:94, h:52 } },
-    { name: 'ステージ4：右高得点路', shortName: '右高得点路', rects: [...COMMON_WALLS, { kind:'sand', x:2, y:12, w:44, h:16 }, { kind:'sand', x:4, y:29, w:14, h:30 }, { kind:'wall', x:20, y:30, w:4, h:27 }, { kind:'sand', x:28, y:25, w:16, h:35 }, { kind:'sand', x:11, y:57, w:26, h:11 }], carves: [{ x:24, y:14, rx:126, ry:16 }, { x:10, y:45, rx:30, ry:92 }, { x:38, y:42, rx:28, ry:92 }, { x:24, y:60, rx:42, ry:34 }, { x:24, y:65, rx:52, ry:28 }], traps: [{ x:240, y:220, w:62, h:34, type:'danger' }, { x:250, y:304, w:58, h:34, type:'danger' }, { x:214, y:374, w:48, h:28, type:'swamp' }], mechanisms: [{ kind:'rotor', x:246, y:286, len:76, angle:0.2, speed:1.9 }, { kind:'bar', x:82, y:350, w:88, h:10, min:62, max:204, speed:38, dir:1 }], goal: { x:132, y:410, w:94, h:52 } },
-    { name: 'ステージ5：二段バー', shortName: '二段バー', rects: [...COMMON_WALLS, { kind:'sand', x:2, y:12, w:44, h:16 }, { kind:'sand', x:8, y:28, w:32, h:24 }, { kind:'sand', x:10, y:55, w:28, h:13 }, { kind:'wall', x:3, y:57, w:11, h:2 }, { kind:'wall', x:34, y:57, w:11, h:2 }], carves: [{ x:24, y:14, rx:126, ry:16 }, { x:20, y:32, rx:56, ry:58 }, { x:29, y:45, rx:54, ry:56 }, { x:22, y:61, rx:54, ry:34 }], traps: [{ x:28, y:358, w:56, h:26, type:'pit' }, { x:238, y:358, w:58, h:28, type:'danger' }], mechanisms: [{ kind:'bar', x:68, y:220, w:96, h:10, min:48, max:212, speed:46, dir:1 }, { kind:'bar', x:158, y:332, w:94, h:10, min:112, max:268, speed:42, dir:-1 }], goal: { x:132, y:410, w:94, h:52 } },
-    { name: 'ステージ6：広い受け皿', shortName: '広い受け皿', rects: [...COMMON_WALLS, { kind:'sand', x:2, y:12, w:44, h:15 }, { kind:'sand', x:6, y:27, w:36, h:27 }, { kind:'sand', x:8, y:54, w:32, h:14 }, { kind:'wall', x:2, y:36, w:7, h:2 }, { kind:'wall', x:39, y:36, w:7, h:2 }], carves: [{ x:24, y:14, rx:126, ry:16 }, { x:24, y:40, rx:72, ry:104 }, { x:12, y:48, rx:30, ry:70 }, { x:36, y:48, rx:30, ry:70 }, { x:24, y:64, rx:82, ry:34 }], traps: [{ x:24, y:310, w:50, h:22, type:'pit' }, { x:258, y:310, w:46, h:22, type:'danger' }], mechanisms: [{ kind:'bar', x:88, y:260, w:120, h:10, min:64, max:256, speed:30, dir:1 }], goal: { x:104, y:400, w:128, h:62 } },
-    { name: 'ステージ7：細い通路', shortName: '細い通路', rects: [...COMMON_WALLS, { kind:'sand', x:2, y:12, w:44, h:16 }, { kind:'sand', x:5, y:28, w:13, h:27 }, { kind:'sand', x:31, y:28, w:12, h:27 }, { kind:'sand', x:20, y:32, w:8, h:34 }, { kind:'sand', x:18, y:60, w:12, h:8 }, { kind:'wall', x:15, y:62, w:3, h:4 }, { kind:'wall', x:30, y:62, w:3, h:4 }], carves: [{ x:24, y:14, rx:126, ry:16 }, { x:11, y:43, rx:26, ry:82 }, { x:37, y:43, rx:26, ry:82 }, { x:24, y:50, rx:18, ry:92 }, { x:24, y:65, rx:24, ry:26 }], traps: [{ x:42, y:286, w:54, h:24, type:'pit' }, { x:246, y:286, w:52, h:24, type:'danger' }, { x:40, y:390, w:46, h:22, type:'swamp' }], mechanisms: [{ kind:'gate', x:160, y:338, w:12, h:52, t:0, open:false }, { kind:'bar', x:92, y:246, w:82, h:10, min:70, max:214, speed:40, dir:1 }], goal: { x:132, y:410, w:94, h:52 } },
-    { name: 'ステージ8：危険サンド', shortName: '危険サンド', rects: [...COMMON_WALLS, { kind:'sand', x:2, y:12, w:44, h:16 }, { kind:'sand', x:5, y:28, w:12, h:32 }, { kind:'sand', x:19, y:28, w:10, h:31 }, { kind:'sand', x:31, y:28, w:12, h:32 }, { kind:'sand', x:12, y:57, w:24, h:11 }], carves: [{ x:24, y:14, rx:126, ry:16 }, { x:10, y:45, rx:28, ry:94 }, { x:24, y:45, rx:20, ry:88 }, { x:38, y:45, rx:22, ry:88 }, { x:24, y:64, rx:56, ry:30 }], traps: [{ x:22, y:246, w:58, h:28, type:'danger' }, { x:240, y:246, w:58, h:28, type:'danger' }, { x:26, y:360, w:54, h:28, type:'swamp' }, { x:238, y:362, w:54, h:28, type:'danger' }], mechanisms: [{ kind:'bar', x:92, y:216, w:88, h:10, min:58, max:220, speed:44, dir:1 }, { kind:'gate', x:154, y:316, w:14, h:48, t:0, open:false }], goal: { x:132, y:410, w:94, h:52 } },
-    { name: 'ステージ9：回転障害物', shortName: '回転障害物', rects: [...COMMON_WALLS, { kind:'sand', x:2, y:12, w:44, h:16 }, { kind:'sand', x:4, y:28, w:15, h:28 }, { kind:'sand', x:18, y:28, w:12, h:31 }, { kind:'sand', x:31, y:28, w:13, h:28 }, { kind:'sand', x:9, y:56, w:30, h:12 }], carves: [{ x:24, y:14, rx:126, ry:16 }, { x:24, y:39, rx:38, ry:88 }, { x:10, y:46, rx:24, ry:74 }, { x:38, y:46, rx:24, ry:74 }, { x:24, y:64, rx:64, ry:32 }], traps: [{ x:30, y:352, w:52, h:24, type:'pit' }, { x:232, y:334, w:58, h:28, type:'danger' }], mechanisms: [{ kind:'rotor', x:160, y:258, len:94, angle:0.4, speed:2.15 }, { kind:'rotor', x:236, y:328, len:72, angle:-0.2, speed:-1.75 }], goal: { x:112, y:404, w:116, h:58 } },
-    { name: 'ステージ10：総合', shortName: '総合', rects: [...COMMON_WALLS, { kind:'sand', x:2, y:12, w:44, h:16 }, { kind:'sand', x:4, y:28, w:13, h:30 }, { kind:'sand', x:19, y:29, w:10, h:30 }, { kind:'sand', x:31, y:27, w:13, h:31 }, { kind:'sand', x:10, y:56, w:28, h:12 }, { kind:'wall', x:2, y:32, w:10, h:2 }, { kind:'wall', x:34, y:32, w:12, h:2 }], carves: [{ x:24, y:14, rx:126, ry:16 }, { x:10, y:45, rx:30, ry:92 }, { x:24, y:44, rx:20, ry:92 }, { x:38, y:43, rx:28, ry:88 }, { x:24, y:61, rx:58, ry:34 }, { x:24, y:65, rx:66, ry:30 }], traps: [{ x:22, y:295, w:58, h:24, type:'pit' }, { x:246, y:244, w:58, h:30, type:'danger' }, { x:232, y:366, w:54, h:26, type:'swamp' }], mechanisms: [{ kind:'bar', x:70, y:214, w:86, h:10, min:54, max:198, speed:44, dir:1 }, { kind:'gate', x:154, y:282, w:14, h:58, t:0, open:false }, { kind:'rotor', x:246, y:316, len:70, angle:0.1, speed:2.0 }, { kind:'bar', x:148, y:370, w:90, h:10, min:116, max:268, speed:38, dir:-1 }], goal: { x:112, y:404, w:116, h:58 } }
+      { kind: 'sand', x: 2, y: 12, w: 44, h: 20 },
+      { kind: 'sand', x: 3, y: 38, w: 15, h: 34 },
+      { kind: 'sand', x: 18, y: 36, w: 12, h: 36 },
+      { kind: 'sand', x: 31, y: 38, w: 13, h: 34 },
+      { kind: 'sand', x: 4, y: 76, w: 16, h: 34 },
+      { kind: 'sand', x: 20, y: 74, w: 9, h: 38 },
+      { kind: 'sand', x: 30, y: 76, w: 14, h: 34 },
+      { kind: 'sand', x: 8, y: 116, w: 32, h: 18 },
+      { kind: 'wall', x: 2, y: 34 + (variant % 3), w: 10, h: 2 },
+      { kind: 'wall', x: 34, y: 34 + (variant % 4), w: 12, h: 2 },
+      { kind: 'wall', x: 12, y: 68, w: 7, h: 2 },
+      { kind: 'wall', x: 30, y: 68, w: 8, h: 2 },
+      { kind: 'wall', x: 4, y: 112, w: 10, h: 2 },
+      { kind: 'wall', x: 34, y: 112, w: 10, h: 2 }
+    ];
+    if (variant === 7) rects.push({ kind: 'wall', x: 22, y: 94, w: 4, h: 28 });
+    const carves = [
+      { x: 11, y: 14, rx: 30, ry: 14 }, { x: 24, y: 14, rx: 32, ry: 14 }, { x: 37, y: 14, rx: 30, ry: 14 },
+      { x: 10, y: 50, rx: 28, ry: 84 }, { x: 24, y: 51, rx: 22, ry: 82 }, { x: 38, y: 50, rx: 28, ry: 84 },
+      { x: rightRisk ? 37 : 11, y: 88, rx: 26, ry: 90 }, { x: 24, y: 96, rx: variant === 7 ? 16 : 34, ry: 94 },
+      { x: Math.round((goalX + 64) / CELL_W), y: 124, rx: 58, ry: 36 }
+    ];
+    const traps = [
+      { x: rightRisk ? 236 : 24, y: 330 + variant * 6, w: 62, h: 30, type: 'danger' },
+      { x: rightRisk ? 220 : 36, y: 560 + (variant % 4) * 16, w: 64, h: 34, type: variant % 2 ? 'swamp' : 'danger' },
+      { x: variant % 2 ? 244 : 28, y: 725, w: 52, h: 26, type: 'pit' }
+    ];
+    const mechanisms = [
+      { kind: 'bar', x: 62 + (variant % 5) * 10, y: 285 + variant * 4, w: 90, h: 10, min: 46, max: 214, speed: 32 + variant * 2, dir: 1 },
+      { kind: 'gate', x: 150 + (variant % 3) * 4, y: 545 + (variant % 4) * 12, w: 15, h: 76, t: 0, open: false }
+    ];
+    if (variant === 4 || variant === 9 || variant === 10) mechanisms.push({ kind: 'rotor', x: 236, y: 610, len: 76, angle: 0.2, speed: 1.8 });
+    if (variant === 5 || variant === 10) mechanisms.push({ kind: 'bar', x: 150, y: 705, w: 92, h: 10, min: 108, max: 270, speed: 40, dir: -1 });
+    if (variant === 9) mechanisms.push({ kind: 'rotor', x: 150, y: 700, len: 86, angle: -0.3, speed: -1.9 });
+    return { name, shortName, rects, carves, traps, mechanisms, goal: { x: goalX, y: 840, w: leftGoal ? 128 : 116, h: 68 } };
+  }
+  const STAGES = [
+    makeStage('ステージ1：三つ道', '三つ道', 1),
+    makeStage('ステージ2：左安全路', '左安全路', 2),
+    makeStage('ステージ3：中央ゲート', '中央ゲート', 3),
+    makeStage('ステージ4：右高得点路', '右高得点路', 4),
+    makeStage('ステージ5：二段バー', '二段バー', 5),
+    makeStage('ステージ6：広い受け皿', '広い受け皿', 6),
+    makeStage('ステージ7：細い通路', '細い通路', 7),
+    makeStage('ステージ8：危険サンド', '危険サンド', 8),
+    makeStage('ステージ9：回転障害物', '回転障害物', 9),
+    makeStage('ステージ10：総合', '総合', 10)
   ];
 
   // 5. 状態管理
@@ -131,8 +172,9 @@
   let rafId = 0;
   let rankingSubmitted = false;
   let resultData = null;
-  let inputDown = false;
+  let inputMode = INPUT_MODE.NONE;
   let lastPoint = null;
+  let cameraY = 0;
   let loopRunning = false;
   let deliveredFlash = 0;
   let lostFlash = 0;
@@ -143,7 +185,7 @@
     state = next;
     Object.values(screens).forEach(s => s.classList.remove('active'));
     screens[next].classList.add('active');
-    if (next !== STATES.PLAYING) inputDown = false;
+    if (next !== STATES.PLAYING) { inputMode = INPUT_MODE.NONE; lastPoint = null; }
   }
 
   // 6. 入力処理
@@ -155,9 +197,44 @@
       y: Math.max(0, Math.min(canvas.height, (t.clientY - rect.top) * canvas.height / rect.height))
     };
   }
-  function beginInput(e) { if (state !== STATES.PLAYING) return; e.preventDefault(); inputDown = true; lastPoint = canvasPoint(e); carveSandAt(lastPoint.x, lastPoint.y); }
-  function moveInput(e) { if (state !== STATES.PLAYING || !inputDown) return; e.preventDefault(); const p = canvasPoint(e); carveLine(lastPoint, p); lastPoint = p; }
-  function endInput(e) { if (e) e.preventDefault(); inputDown = false; lastPoint = null; }
+  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+  function clampCameraY(value) { return clamp(value, 0, WORLD_H - VIEW_H); }
+  function screenToWorld(p) { return { x: p.x, y: p.y + cameraY }; }
+  function updateCameraFromScrollbar(screenY) {
+    const trackTop = 10;
+    const trackHeight = VIEW_H - 20;
+    const ratio = clamp((screenY - trackTop) / trackHeight, 0, 1);
+    cameraY = clampCameraY(ratio * (WORLD_H - VIEW_H));
+  }
+  function beginInput(e) {
+    e.preventDefault();
+    const p = canvasPoint(e);
+    if (p.x <= SCROLLBAR_W) {
+      inputMode = INPUT_MODE.CAMERA;
+      updateCameraFromScrollbar(p.y);
+      draw();
+      return;
+    }
+    if (state !== STATES.PLAYING) return;
+    inputMode = INPUT_MODE.CARVE;
+    lastPoint = screenToWorld(p);
+    carveSandAt(lastPoint.x, lastPoint.y);
+  }
+  function moveInput(e) {
+    if (inputMode === INPUT_MODE.NONE) return;
+    e.preventDefault();
+    const p = canvasPoint(e);
+    if (inputMode === INPUT_MODE.CAMERA) {
+      updateCameraFromScrollbar(p.y);
+      draw();
+      return;
+    }
+    if (state !== STATES.PLAYING || !lastPoint) return;
+    const worldPoint = screenToWorld(p);
+    carveLine(lastPoint, worldPoint);
+    lastPoint = worldPoint;
+  }
+  function endInput(e) { if (e) e.preventDefault(); inputMode = INPUT_MODE.NONE; lastPoint = null; }
 
   // 7. ステージ構築
   function fillRectCells(x, y, w, h, value) {
@@ -192,13 +269,14 @@
     lostFlash = 0;
     successFlash = 0;
     pendingClear = false;
+    cameraY = 0;
     buildStage();
     cigarettes = [];
     const typePlan = ['normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','red','blue','normal','red','blue','normal','red','blue','normal','black','normal','red','blue','normal','red','blue','normal','black','normal','black'];
     for (let i = 0; i < TOTAL; i++) {
       cigarettes.push({
-        x: 70 + (i % 10) * 20,
-        y: 42 + Math.floor(i / 10) * 14,
+        x: [70, 160, 250][Math.floor(i / 10)] + ((i % 5) - 2) * 9,
+        y: [48, 42, 50][Math.floor(i / 10)] + Math.floor((i % 10) / 5) * 14,
         vx: (i % 5 - 2) * 5,
         vy: 0,
         r: 7,
@@ -270,7 +348,7 @@
     for (let i = 0; i <= steps; i++) carveSandAt(a.x + dx * i / steps, a.y + dy * i / steps);
   }
   function solidAt(px, py) {
-    if (px < 0 || py < 0 || px >= canvas.width || py >= canvas.height) return true;
+    if (px < 0 || py < 0 || px >= WORLD_W || py >= WORLD_H) return true;
     const c = cellAt(px, py);
     const v = grid[idx(c.x, c.y)];
     return v === 1 || v === 2;
@@ -295,6 +373,7 @@
   // 11. 仕掛け更新
   function updateMechanisms(dt) {
     for (const m of mechanisms) {
+      if (!isNearView(m.y || 0, m.h || m.len || 0)) continue;
       if (m.kind === 'bar') {
         m.x += m.speed * m.dir * dt;
         if (m.x < m.min || m.x + m.w > m.max) {
@@ -340,7 +419,7 @@
         }
       }
     }
-    if (cig.y > canvas.height + 30) loseCig(cig);
+    if (cig.y > WORLD_H + 30) loseCig(cig);
   }
   function distToSegment(px, py, x1, y1, x2, y2) {
     const dx = x2 - x1;
@@ -392,7 +471,7 @@
       finishGame(delivered >= NEED ? 'clear' : 'fail');
       return true;
     }
-    if (active.every(c => c.y > goal.y + goal.h + 28)) {
+    if (active.every(c => c.y > goal.y + goal.h + 80)) {
       finishGame(delivered >= NEED ? 'clear' : 'fail');
       return true;
     }
@@ -407,17 +486,24 @@
     sky.addColorStop(1, '#e4fff2');
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(0, -cameraY);
     drawGrid();
     drawBrightMarks();
     drawTraps();
     drawGoal();
     drawMechanisms();
-    for (const cig of cigarettes) if (cig.active) drawCig(cig);
+    for (const cig of cigarettes) if (cig.active && isNearView(cig.y, cig.r * 2)) drawCig(cig);
     drawParticles();
+    ctx.restore();
+    drawScrollbar();
     if (successFlash > 0) drawSuccessFlash();
   }
+  function isNearView(y, h = 0) { return y + h >= cameraY - 40 && y <= cameraY + VIEW_H + 40; }
   function drawGrid() {
-    for (let y = 0; y < GRID_H; y++) {
+    const firstRow = Math.max(0, Math.floor(cameraY / CELL_H) - 1);
+    const lastRow = Math.min(GRID_H - 1, Math.ceil((cameraY + VIEW_H) / CELL_H) + 1);
+    for (let y = firstRow; y <= lastRow; y++) {
       for (let x = 0; x < GRID_W; x++) {
         const v = grid[idx(x, y)];
         if (!v) continue;
@@ -435,6 +521,7 @@
   }
   function drawBrightMarks() {
     for (const mark of brightMarks) {
+      if (!isNearView(mark.y, mark.ry)) continue;
       ctx.globalAlpha = Math.max(0, mark.life * 2.8);
       ctx.fillStyle = '#ffe48d';
       ctx.beginPath();
@@ -472,6 +559,7 @@
   }
   function drawTraps() {
     for (const t of traps) {
+      if (!isNearView(t.y, t.h)) continue;
       const pulse = 0.55 + Math.sin(performance.now() / 180) * 0.12;
       const grad = ctx.createLinearGradient(t.x, t.y, t.x + t.w, t.y + t.h);
       grad.addColorStop(0, t.type === 'swamp' ? '#120719' : '#23040b');
@@ -492,6 +580,7 @@
   }
   function drawMechanisms() {
     for (const m of mechanisms) {
+      if (!isNearView(m.y || 0, m.h || m.len || 0)) continue;
       if (m.kind === 'bar') {
         ctx.fillStyle = '#8d54cf';
         roundRect(m.x, m.y, m.w, m.h, 5, true);
@@ -514,6 +603,35 @@
         ctx.restore();
       }
     }
+  }
+  function drawScrollbar() {
+    const trackTop = 10;
+    const trackHeight = VIEW_H - 20;
+    ctx.save();
+    ctx.fillStyle = 'rgba(42,31,45,.72)';
+    roundRect(3, trackTop, SCROLLBAR_W - 6, trackHeight, 9, true);
+    ctx.fillStyle = 'rgba(255,253,245,.9)';
+    const thumbH = Math.max(42, trackHeight * VIEW_H / WORLD_H);
+    const thumbY = trackTop + (cameraY / (WORLD_H - VIEW_H)) * (trackHeight - thumbH);
+    roundRect(6, thumbY, SCROLLBAR_W - 12, thumbH, 7, true);
+    const goalY = trackTop + ((goal.y + goal.h / 2) / WORLD_H) * trackHeight;
+    ctx.fillStyle = '#65d694';
+    ctx.fillText('🦊', 2, goalY + 5);
+    const active = cigarettes.filter(c => c.active);
+    if (active.length) {
+      const avgY = active.reduce((sum, c) => sum + c.y, 0) / active.length;
+      const cigY = trackTop + (avgY / WORLD_H) * trackHeight;
+      ctx.fillStyle = '#fff8e5';
+      ctx.beginPath();
+      ctx.arc(SCROLLBAR_W / 2, cigY, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#6c4422';
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.font = '9px sans-serif';
+    ctx.fillText('↕', 8, 9);
+    ctx.restore();
   }
   function roundRect(x, y, w, h, r, fill, stroke = false) {
     const radius = Math.max(0, Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2));
@@ -562,6 +680,7 @@
   }
   function drawParticles() {
     for (const p of particles) {
+      if (!isNearView(p.y, 3)) continue;
       ctx.globalAlpha = Math.max(0, p.life * 2);
       ctx.fillStyle = p.color;
       ctx.fillRect(p.x, p.y, 3, 3);
@@ -574,7 +693,7 @@
     $('timeHud').textContent = '残り ' + (remainingMs / 1000).toFixed(1);
     $('deliveredHud').textContent = '届けた ' + delivered + '/' + NEED;
     $('deliveredHud').style.transform = deliveredFlash > 0 ? 'scale(1.08)' : 'scale(1)';
-    $('stageHud').textContent = 'ステージ：' + currentStage.shortName + '　砂を削って🚬を🦊へ届けよう';
+    $('stageHud').textContent = 'ステージ：' + currentStage.shortName + '　左バーで上下を見る / 砂を削って🚬を🦊へ届けよう';
     $('statusHud').textContent = '届けた ' + delivered + ' / 失った ' + lost;
     $('statusHud').style.color = lostFlash > 0 ? '#5b1d75' : '';
   }
