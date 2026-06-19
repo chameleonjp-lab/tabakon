@@ -342,13 +342,30 @@
         delivered: false,
         lost: false,
         angle: 0,
-        sink: 0
+        sink: 0,
+        bottomTimer: 0,
+        stuckTimer: 0,
+        lastX: SPAWN_CLUSTERS[Math.floor(i / 10)].x + ((i % 5) - 2) * 9,
+        lastY: SPAWN_CLUSTERS[Math.floor(i / 10)].y + Math.floor((i % 10) / 5) * 14
       });
     }
     updateHud(true);
     draw();
   }
   function showError(message, error) { console.error(message, error); $('errorText').textContent = message; setState(STATES.ERROR); }
+  function beginReadySequence() {
+    resetGame();
+    setState(STATES.READY);
+    console.log('[tabakon] ready countdown start');
+    $('countdown').style.display = 'flex';
+    let n = 3;
+    $('countdown').textContent = n;
+    const timer = setInterval(() => {
+      n--;
+      if (n > 0) $('countdown').textContent = n;
+      else { clearInterval(timer); $('countdown').style.display = 'none'; startGame(); }
+    }, 850);
+  }
   function startReadyCountdown() {
     console.log('[tabakon] start clicked');
     const name = $('playerName').value.trim();
@@ -356,17 +373,7 @@
     try {
       $('nameError').textContent = '';
       localStorage.setItem('tabakon_player_name', name);
-      resetGame();
-      setState(STATES.READY);
-      console.log('[tabakon] ready countdown start');
-      $('countdown').style.display = 'flex';
-      let n = 3;
-      $('countdown').textContent = n;
-      const timer = setInterval(() => {
-        n--;
-        if (n > 0) $('countdown').textContent = n;
-        else { clearInterval(timer); $('countdown').style.display = 'none'; startGame(); }
-      }, 850);
+      beginReadySequence();
     } catch (error) {
       showError('ゲーム開始処理に失敗しました。ページを再読み込みしてください。', error);
     }
@@ -391,8 +398,27 @@
         }
       }
     }
-    if (!silent && removed > 0) brightMarks.push({ x: cx, y: cy, rx, ry, life: 0.22 });
+    if (!silent && removed > 0) {
+      softenSandAround(cx, cy, Math.max(rx, ry) + 8);
+      brightMarks.push({ x: cx, y: cy, rx, ry, life: 0.22 });
+    }
     return removed;
+  }
+
+  function softenSandAround(cx, cy, radius) {
+    const minX = Math.floor((cx - radius) / CELL_W);
+    const maxX = Math.ceil((cx + radius) / CELL_W);
+    const minY = Math.floor((cy - radius) / CELL_H);
+    const maxY = Math.ceil((cy + radius) / CELL_H);
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        if (x <= 0 || y <= 0 || x >= GRID_W - 1 || y >= GRID_H - 1) continue;
+        if (grid[idx(x, y)] !== 1) continue;
+        const emptyAround = grid[idx(x - 1, y)] === 0 || grid[idx(x + 1, y)] === 0 || grid[idx(x, y - 1)] === 0 || grid[idx(x, y + 1)] === 0;
+        const diagonalEmpty = grid[idx(x - 1, y - 1)] === 0 || grid[idx(x + 1, y - 1)] === 0 || grid[idx(x - 1, y + 1)] === 0 || grid[idx(x + 1, y + 1)] === 0;
+        if (emptyAround && diagonalEmpty && Math.random() < 0.18) grid[idx(x, y)] = 0;
+      }
+    }
   }
   function carveSandAt(x, y) {
     const removed = carveEllipse(x, y, 20, 20);
@@ -424,6 +450,8 @@
       resolveCollisions(cig, cfg);
       cig.angle += cig.vx * dt * 0.04;
       checkGoalAndTraps(cig);
+      checkBottomLost(cig, dt);
+      updateStuckState(cig, dt);
     }
   }
 
@@ -451,11 +479,23 @@
     const ny = Math.max(rect.y, Math.min(c.y, rect.y + rect.h));
     return Math.hypot(c.x - nx, c.y - ny) < c.r;
   }
+  function applySlopeRoll(cig) {
+    const belowLeftFree = !solidAt(cig.x - cig.r, cig.y + cig.r + 4);
+    const belowRightFree = !solidAt(cig.x + cig.r, cig.y + cig.r + 4);
+    if (belowLeftFree && !belowRightFree) cig.vx -= 12;
+    else if (belowRightFree && !belowLeftFree) cig.vx += 12;
+  }
   function resolveCollisions(cig, cfg) {
     for (let k = 0; k < 4; k++) {
-      if (solidAt(cig.x, cig.y + cig.r)) { cig.y -= 2; cig.vy = -Math.abs(cig.vy) * cfg.bounce; cig.vx += (Math.random() - 0.5) * 18; }
+      if (solidAt(cig.x, cig.y + cig.r)) { cig.y -= 2; cig.vy = -Math.abs(cig.vy) * cfg.bounce; cig.vx += (Math.random() - 0.5) * 3; }
       if (solidAt(cig.x - cig.r, cig.y)) { cig.x += 2; cig.vx = Math.abs(cig.vx) * 0.55; }
       if (solidAt(cig.x + cig.r, cig.y)) { cig.x -= 2; cig.vx = -Math.abs(cig.vx) * 0.55; }
+    }
+    const grounded = solidAt(cig.x, cig.y + cig.r + 1);
+    if (grounded) {
+      if (Math.abs(cig.vy) < 18) cig.vy = 0;
+      cig.vx *= 0.96;
+      applySlopeRoll(cig);
     }
     for (const m of mechanisms) {
       if (m.kind === 'bar' && rectHitCircle(m, cig)) {
@@ -501,6 +541,30 @@
       }
     }
   }
+
+  function checkBottomLost(cig, dt) {
+    if (!cig.active) return;
+    const inGoalX = cig.x > goal.x - 8 && cig.x < goal.x + goal.w + 8;
+    const belowGoal = cig.y > goal.y + goal.h + 40;
+    const nearBottom = cig.y > WORLD_H - 28;
+    if ((nearBottom || belowGoal) && !inGoalX) {
+      cig.bottomTimer = (cig.bottomTimer || 0) + dt;
+      if (cig.bottomTimer >= 0.35) loseCig(cig);
+    } else {
+      cig.bottomTimer = 0;
+    }
+  }
+  function updateStuckState(cig, dt) {
+    if (!cig.active) return;
+    const dx = cig.x - (cig.lastX ?? cig.x);
+    const dy = cig.y - (cig.lastY ?? cig.y);
+    const moved = Math.hypot(dx, dy);
+    const speed = Math.hypot(cig.vx, cig.vy);
+    if (moved < 0.35 && speed < 8) cig.stuckTimer = (cig.stuckTimer || 0) + dt;
+    else cig.stuckTimer = 0;
+    cig.lastX = cig.x;
+    cig.lastY = cig.y;
+  }
   function deliverCig(cig) {
     if (!cig.active) return;
     cig.active = false;
@@ -528,6 +592,16 @@
       return true;
     }
     if (active.every(c => c.y > goal.y + goal.h + 80)) {
+      finishGame(delivered >= NEED ? 'clear' : 'fail');
+      return true;
+    }
+    const allUnplayable = active.every(c => {
+      const belowGoal = c.y > goal.y + goal.h + 40;
+      const nearBottom = c.y > WORLD_H - 36;
+      const stuckTooLong = (c.stuckTimer || 0) >= 2.0;
+      return belowGoal || nearBottom || stuckTooLong;
+    });
+    if (allUnplayable) {
       finishGame(delivered >= NEED ? 'clear' : 'fail');
       return true;
     }
@@ -664,29 +738,43 @@
     const trackTop = 10;
     const trackHeight = VIEW_H - 20;
     ctx.save();
-    ctx.fillStyle = 'rgba(42,31,45,.72)';
-    roundRect(3, trackTop, SCROLLBAR_W - 6, trackHeight, 9, true);
-    ctx.fillStyle = 'rgba(255,253,245,.9)';
+    ctx.fillStyle = 'rgba(42,31,45,.82)';
+    roundRect(2, trackTop, SCROLLBAR_W - 4, trackHeight, 10, true);
+    ctx.strokeStyle = 'rgba(255,255,255,.95)';
+    ctx.lineWidth = 2.5;
+    roundRect(3.5, trackTop + 1.5, SCROLLBAR_W - 7, trackHeight - 3, 9, false, true);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('▲', SCROLLBAR_W / 2, trackTop + 12);
+    ctx.fillText('▼', SCROLLBAR_W / 2, trackTop + trackHeight - 4);
+    ctx.fillStyle = 'rgba(255,244,155,.98)';
     const thumbH = Math.max(42, trackHeight * VIEW_H / WORLD_H);
     const thumbY = trackTop + (cameraY / (WORLD_H - VIEW_H)) * (trackHeight - thumbH);
-    roundRect(6, thumbY, SCROLLBAR_W - 12, thumbH, 7, true);
+    roundRect(5, thumbY, SCROLLBAR_W - 10, thumbH, 7, true);
+    ctx.strokeStyle = '#6c4422';
+    ctx.lineWidth = 1.5;
+    roundRect(5, thumbY, SCROLLBAR_W - 10, thumbH, 7, false, true);
     const goalY = trackTop + ((goal.y + goal.h / 2) / WORLD_H) * trackHeight;
+    ctx.font = '14px serif';
     ctx.fillStyle = '#65d694';
-    ctx.fillText('🦊', 2, goalY + 5);
+    ctx.strokeStyle = '#164b32';
+    ctx.lineWidth = 2;
+    ctx.strokeText('🦊', SCROLLBAR_W / 2, goalY + 5);
+    ctx.fillText('🦊', SCROLLBAR_W / 2, goalY + 5);
     const active = cigarettes.filter(c => c.active);
     if (active.length) {
       const avgY = active.reduce((sum, c) => sum + c.y, 0) / active.length;
       const cigY = trackTop + (avgY / WORLD_H) * trackHeight;
       ctx.fillStyle = '#fff8e5';
       ctx.beginPath();
-      ctx.arc(SCROLLBAR_W / 2, cigY, 5, 0, Math.PI * 2);
+      ctx.arc(SCROLLBAR_W / 2, cigY, 5.5, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#6c4422';
+      ctx.strokeStyle = '#2a1f2d';
+      ctx.lineWidth = 2;
       ctx.stroke();
     }
-    ctx.fillStyle = 'rgba(255,255,255,.9)';
-    ctx.font = '9px sans-serif';
-    ctx.fillText('↕', 8, 9);
+    ctx.textAlign = 'start';
     ctx.restore();
   }
   function roundRect(x, y, w, h, r, fill, stroke = false) {
@@ -866,7 +954,7 @@
       $('ruleBtn').onclick = () => setState(STATES.RULE);
       $('backHomeBtn').onclick = () => setState(STATES.HOME);
       $('errorBackBtn').onclick = () => setState(STATES.HOME);
-      $('retryBtn').onclick = () => setState(STATES.HOME);
+      $('retryBtn').onclick = () => beginReadySequence();
       $('retireBtn').onclick = () => { if (state === STATES.PLAYING) finishGame('retire'); };
       $('homeShareBtn').onclick = () => shareText(homeShareText());
       $('resultShareBtn').onclick = () => resultData && shareText(resultShareText());
