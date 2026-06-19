@@ -376,7 +376,6 @@
   // 11. 仕掛け更新
   function updateMechanisms(dt) {
     for (const m of mechanisms) {
-      if (!isNearView(m.y || 0, m.h || m.len || 0)) continue;
       if (m.kind === 'bar') {
         m.x += m.speed * m.dir * dt;
         if (m.x < m.min || m.x + m.w > m.max) {
