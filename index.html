@@ -28,7 +28,7 @@
     </section>
 
     <section id="gameScreen" class="screen">
-      <div class="hud"><div id="timeHud" class="pill">残り 60.0</div><div id="deliveredHud" class="pill">届けた 0/20</div><button id="retireBtn" class="retire">リタイア</button></div>
+      <div class="hud"><div id="timeHud" class="pill">残り 60</div><div id="deliveredHud" class="pill">届けた 0/20</div><button id="retireBtn" class="retire">リタイア</button></div>
       <div id="gameWrap"><canvas id="gameCanvas" width="320" height="480"></canvas><div id="countdown">3</div></div>
       <div id="stageHud" class="status">ステージ：---</div><div id="statusHud" class="status">左バーで上下を見る / 砂を削って🚬を🦊へ届けよう</div>
       <small class="note">Canvas上はスワイプしてもページが動きません。黒い沼や危険エリアに注意。</small>
@@ -142,7 +142,7 @@
       { kind: 'gate', x: 150 + (variant % 3) * 4, y: 545 + (variant % 4) * 12, w: 15, h: 76, t: 0, open: false }
     ];
     if (variant === 4 || variant === 9 || variant === 10) mechanisms.push({ kind: 'rotor', x: 236, y: 610, len: 76, angle: 0.2, speed: 1.8 });
-    if (variant === 5 || variant === 10) mechanisms.push({ kind: 'bar', x: 150, y: 705, w: 92, h: 10, min: 108, max: 270, speed: 40, dir: -1 });
+    if (variant === 5 || variant === 10) mechanisms.push({ kind: 'bar', x: 150, y: 678, w: 92, h: 10, min: 108, max: 270, speed: 40, dir: -1 });
     if (variant === 9) mechanisms.push({ kind: 'rotor', x: 150, y: 700, len: 86, angle: -0.3, speed: -1.9 });
     return { name, shortName, rects, carves, traps, mechanisms, goal: { x: goalX, y: 840, w: leftGoal ? 128 : 116, h: 68 } };
   }
@@ -342,6 +342,7 @@
         delivered: false,
         lost: false,
         angle: 0,
+        squash: 0,
         sink: 0,
         bottomTimer: 0,
         stuckTimer: 0,
@@ -399,25 +400,40 @@
       }
     }
     if (!silent && removed > 0) {
-      softenSandAround(cx, cy, Math.max(rx, ry) + 8);
+      settleSandAround(cx, cy, Math.max(rx, ry) + 10);
       brightMarks.push({ x: cx, y: cy, rx, ry, life: 0.22 });
     }
     return removed;
   }
 
-  function softenSandAround(cx, cy, radius) {
-    const minX = Math.floor((cx - radius) / CELL_W);
-    const maxX = Math.ceil((cx + radius) / CELL_W);
-    const minY = Math.floor((cy - radius) / CELL_H);
-    const maxY = Math.ceil((cy + radius) / CELL_H);
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        if (x <= 0 || y <= 0 || x >= GRID_W - 1 || y >= GRID_H - 1) continue;
-        if (grid[idx(x, y)] !== 1) continue;
-        const emptyAround = grid[idx(x - 1, y)] === 0 || grid[idx(x + 1, y)] === 0 || grid[idx(x, y - 1)] === 0 || grid[idx(x, y + 1)] === 0;
-        const diagonalEmpty = grid[idx(x - 1, y - 1)] === 0 || grid[idx(x + 1, y - 1)] === 0 || grid[idx(x - 1, y + 1)] === 0 || grid[idx(x + 1, y + 1)] === 0;
-        if (emptyAround && diagonalEmpty && Math.random() < 0.18) grid[idx(x, y)] = 0;
+  function settleSandAround(cx, cy, radius) {
+    const minX = Math.max(1, Math.floor((cx - radius) / CELL_W));
+    const maxX = Math.min(GRID_W - 2, Math.ceil((cx + radius) / CELL_W));
+    const minY = Math.max(1, Math.floor((cy - radius) / CELL_H));
+    const maxY = Math.min(GRID_H - 2, Math.ceil((cy + radius) / CELL_H) + 6);
+    const passes = Math.min(24, (maxY - minY + 1) * 2);
+    for (let p = 0; p < passes; p++) {
+      let moved = false;
+      for (let y = maxY - 1; y >= minY; y--) {
+        for (let x = minX; x <= maxX; x++) {
+          if (grid[idx(x, y)] !== 1) continue;
+          let tx = x;
+          if (grid[idx(x, y + 1)] !== 0) {
+            // 真下が埋まっているときは安息角で斜め下へ崩す（垂直スパイクを残さない）
+            const dl = x > minX && grid[idx(x - 1, y)] === 0 && grid[idx(x - 1, y + 1)] === 0;
+            const dr = x < maxX && grid[idx(x + 1, y)] === 0 && grid[idx(x + 1, y + 1)] === 0;
+            if (!dl && !dr) continue;
+            tx = (dl && dr) ? (Math.random() < 0.5 ? x - 1 : x + 1) : (dl ? x - 1 : x + 1);
+          }
+          grid[idx(x, y)] = 0;
+          grid[idx(tx, y + 1)] = 1;
+          moved = true;
+          if (Math.random() < 0.03 && particles.length < MAX_PARTICLES) {
+            particles.push({ x: cellCenterX(tx), y: cellCenterY(y + 1), vx: (Math.random() - 0.5) * 22, vy: 30 + Math.random() * 45, life: 0.28, color: '#cf9f4e' });
+          }
+        }
       }
+      if (!moved) break;
     }
   }
   function carveSandAt(x, y) {
@@ -447,8 +463,9 @@
       cig.vx *= Math.pow(cfg.roll, dt * 60);
       cig.x += cig.vx * dt;
       cig.y += cig.vy * dt;
-      resolveCollisions(cig, cfg);
-      cig.angle += cig.vx * dt * 0.04;
+      resolveCollisions(cig, cfg, dt);
+      cig.angle += cig.vx * dt / 12;
+      if (cig.squash) cig.squash = Math.max(0, cig.squash - dt * 3);
       checkGoalAndTraps(cig);
       checkBottomLost(cig, dt);
       updateStuckState(cig, dt);
@@ -479,15 +496,19 @@
     const ny = Math.max(rect.y, Math.min(c.y, rect.y + rect.h));
     return Math.hypot(c.x - nx, c.y - ny) < c.r;
   }
-  function applySlopeRoll(cig) {
+  function applySlopeRoll(cig, cfg, dt) {
     const belowLeftFree = !solidAt(cig.x - cig.r, cig.y + cig.r + 4);
     const belowRightFree = !solidAt(cig.x + cig.r, cig.y + cig.r + 4);
-    if (belowLeftFree && !belowRightFree) cig.vx -= 12;
-    else if (belowRightFree && !belowLeftFree) cig.vx += 12;
+    if (belowLeftFree && belowRightFree) {
+      if (Math.abs(cig.vx) < 6) cig.vx += (goal.x + goal.w / 2 > cig.x ? 1 : -1) * cfg.gravity * 0.1 * dt;
+      return;
+    }
+    if (belowLeftFree === belowRightFree) return;
+    cig.vx += (belowRightFree ? 1 : -1) * cfg.gravity * 0.6 * dt;
   }
-  function resolveCollisions(cig, cfg) {
+  function resolveCollisions(cig, cfg, dt) {
     for (let k = 0; k < 4; k++) {
-      if (solidAt(cig.x, cig.y + cig.r)) { cig.y -= 2; cig.vy = -Math.abs(cig.vy) * cfg.bounce; cig.vx += (Math.random() - 0.5) * 3; }
+      if (solidAt(cig.x, cig.y + cig.r)) { const impact = Math.abs(cig.vy); cig.y -= 2; cig.vy = -impact * cfg.bounce; if (impact > 220) cig.squash = Math.min(0.22, impact / 2200); }
       if (solidAt(cig.x - cig.r, cig.y)) { cig.x += 2; cig.vx = Math.abs(cig.vx) * 0.55; }
       if (solidAt(cig.x + cig.r, cig.y)) { cig.x -= 2; cig.vx = -Math.abs(cig.vx) * 0.55; }
     }
@@ -495,7 +516,7 @@
     if (grounded) {
       if (Math.abs(cig.vy) < 18) cig.vy = 0;
       cig.vx *= 0.96;
-      applySlopeRoll(cig);
+      applySlopeRoll(cig, cfg, dt);
     }
     for (const m of mechanisms) {
       if (m.kind === 'bar' && rectHitCircle(m, cig)) {
@@ -506,23 +527,22 @@
         cig.x = cig.x < m.x ? m.x - cig.r - 1 : m.x + m.w + cig.r + 1;
         cig.vx *= -0.45;
       } else if (m.kind === 'rotor') {
-        const dx = Math.cos(m.angle) * m.len / 2;
-        const dy = Math.sin(m.angle) * m.len / 2;
-        if (distToSegment(cig.x, cig.y, m.x - dx, m.y - dy, m.x + dx, m.y + dy) < cig.r + 5) {
-          const kick = cig.type === 'blue' ? 145 : cig.type === 'black' ? 120 : 90;
-          cig.vx += Math.cos(m.angle + Math.PI / 2) * kick;
-          cig.vy += Math.sin(m.angle + Math.PI / 2) * kick;
+        const ux = Math.cos(m.angle), uy = Math.sin(m.angle);
+        const along = clamp((cig.x - m.x) * ux + (cig.y - m.y) * uy, -m.len / 2, m.len / 2);
+        const rx = cig.x - (m.x + ux * along), ry = cig.y - (m.y + uy * along);
+        const d = Math.hypot(rx, ry) || 1;
+        if (d < cig.r + 5) {
+          const resp = cig.type === 'blue' ? 1.6 : cig.type === 'black' ? 1.15 : 1.3;
+          const tang = Math.abs(along) * Math.abs(m.speed) * resp;
+          const sgn = Math.sign(m.speed) || 1;
+          cig.vx += Math.cos(m.angle + Math.PI / 2) * tang * sgn + rx / d * 8;
+          cig.vy += Math.sin(m.angle + Math.PI / 2) * tang * sgn + ry / d * 8;
+          cig.x += rx / d * 2;
+          cig.y += ry / d * 2;
         }
       }
     }
     if (cig.y > WORLD_H + 30) loseCig(cig);
-  }
-  function distToSegment(px, py, x1, y1, x2, y2) {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const lenSq = dx * dx + dy * dy || 1;
-    const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
-    return Math.hypot(px - (x1 + dx * t), py - (y1 + dy * t));
   }
   function checkGoalAndTraps(cig) {
     const inGoal = cig.x > goal.x && cig.x < goal.x + goal.w && cig.y > goal.y && cig.y < goal.y + goal.h;
@@ -673,7 +693,12 @@
     const cfg = TYPES[cig.type];
     ctx.save();
     ctx.translate(cig.x, cig.y);
-    ctx.rotate(cig.angle);
+    ctx.fillStyle = 'rgba(43,23,48,.26)';
+    ctx.beginPath();
+    ctx.arc(0, 1.6, 13, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.scale(1 + (cig.squash || 0), 1 - (cig.squash || 0));
     ctx.fillStyle = cfg.fill;
     ctx.strokeStyle = cfg.ring;
     ctx.lineWidth = cig.type === 'black' ? 5 : 4;
@@ -681,6 +706,8 @@
     ctx.arc(0, 0, 12, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+    ctx.restore();
+    ctx.rotate(cig.angle);
     ctx.font = '16px serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -834,11 +861,13 @@
 
   // 14. UI更新
   function updateHud(force) {
-    $('timeHud').textContent = '残り ' + (remainingMs / 1000).toFixed(1);
+    const sec = Math.max(0, remainingMs / 1000);
+    $('timeHud').textContent = '残り ' + (sec > 10 ? Math.ceil(sec) : sec.toFixed(1));
+    $('timeHud').style.color = sec <= 10 ? '#b53d35' : '';
     $('deliveredHud').textContent = '届けた ' + delivered + '/' + NEED;
     $('deliveredHud').style.transform = deliveredFlash > 0 ? 'scale(1.08)' : 'scale(1)';
     $('stageHud').textContent = 'ステージ：' + currentStage.shortName + '　左バーで上下を見る / 砂を削って🚬を🦊へ届けよう';
-    $('statusHud').textContent = '届けた ' + delivered + ' / 失った ' + lost;
+    $('statusHud').textContent = '失った ' + lost + '個　危険ゾーンと最下部に注意';
     $('statusHud').style.color = lostFlash > 0 ? '#5b1d75' : '';
   }
 
@@ -879,9 +908,15 @@
 
   // 17. ランキング送信
   async function supa(path, opts = {}) {
-    const res = await fetch(SUPABASE_URL + path, { ...opts, headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal', ...(opts.headers || {}) } });
-    if (!res.ok) throw new Error('supabase');
-    return res.status === 204 ? null : res.json();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(SUPABASE_URL + path, { ...opts, signal: controller.signal, headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal', ...(opts.headers || {}) } });
+      if (!res.ok) throw new Error('supabase');
+      return res.status === 204 ? null : res.json();
+    } finally {
+      clearTimeout(timer);
+    }
   }
   async function submitScoreOnce(r) {
     if (rankingSubmitted) return;
@@ -955,7 +990,7 @@
       $('backHomeBtn').onclick = () => setState(STATES.HOME);
       $('errorBackBtn').onclick = () => setState(STATES.HOME);
       $('retryBtn').onclick = () => beginReadySequence();
-      $('retireBtn').onclick = () => { if (state === STATES.PLAYING) finishGame('retire'); };
+      $('retireBtn').onclick = () => { if (state === STATES.PLAYING && confirm('リタイアすると-5000点のペナルティです。やめますか？')) finishGame('retire'); };
       $('homeShareBtn').onclick = () => shareText(homeShareText());
       $('resultShareBtn').onclick = () => resultData && shareText(resultShareText());
       ['touchstart', 'mousedown'].forEach(ev => canvas.addEventListener(ev, beginInput, { passive: false }));
