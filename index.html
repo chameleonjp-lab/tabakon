@@ -62,6 +62,11 @@
   const GRID_H = 144;
   const SCROLLBAR_W = 24;
   const INPUT_MODE = { NONE: 'none', CARVE: 'carve', CAMERA: 'camera' };
+  const SPAWN_CLUSTERS = [
+    { x: 76, y: 54 },
+    { x: 160, y: 44 },
+    { x: 244, y: 54 }
+  ];
   const MAX_PARTICLES = 100;
   const STATES = { HOME: 'HOME', RULE: 'RULE', READY: 'READY', PLAYING: 'PLAYING', RESULT: 'RESULT', ERROR: 'ERROR' };
   const TYPES = {
@@ -83,8 +88,8 @@
   const ctx = canvas.getContext('2d');
   const VIEW_W = canvas.width;
   const VIEW_H = canvas.height;
-  const WORLD_W = canvas.width;
-  const WORLD_H = canvas.height * 2;
+  const WORLD_W = VIEW_W;
+  const WORLD_H = VIEW_H * 2;
   const CELL_W = WORLD_W / GRID_W;
   const CELL_H = WORLD_H / GRID_H;
   const idx = (x, y) => y * GRID_W + x;
@@ -162,7 +167,7 @@
   let traps = [];
   let particles = [];
   let brightMarks = [];
-  let goal = { x: 132, y: 410, w: 94, h: 52 };
+  let goal = { x: 104, y: 840, w: 128, h: 68 };
   let currentStage = STAGES[0];
   let delivered = 0;
   let lost = 0;
@@ -201,9 +206,7 @@
   function clampCameraY(value) { return clamp(value, 0, WORLD_H - VIEW_H); }
   function screenToWorld(p) { return { x: p.x, y: p.y + cameraY }; }
   function updateCameraFromScrollbar(screenY) {
-    const trackTop = 10;
-    const trackHeight = VIEW_H - 20;
-    const ratio = clamp((screenY - trackTop) / trackHeight, 0, 1);
+    const ratio = clamp(screenY / VIEW_H, 0, 1);
     cameraY = clampCameraY(ratio * (WORLD_H - VIEW_H));
   }
   function beginInput(e) {
@@ -275,8 +278,8 @@
     const typePlan = ['normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','red','blue','normal','red','blue','normal','red','blue','normal','black','normal','red','blue','normal','red','blue','normal','black','normal','black'];
     for (let i = 0; i < TOTAL; i++) {
       cigarettes.push({
-        x: [70, 160, 250][Math.floor(i / 10)] + ((i % 5) - 2) * 9,
-        y: [48, 42, 50][Math.floor(i / 10)] + Math.floor((i % 10) / 5) * 14,
+        x: SPAWN_CLUSTERS[Math.floor(i / 10)].x + ((i % 5) - 2) * 9,
+        y: SPAWN_CLUSTERS[Math.floor(i / 10)].y + Math.floor((i % 10) / 5) * 14,
         vx: (i % 5 - 2) * 5,
         vy: 0,
         r: 7,
