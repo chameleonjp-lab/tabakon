@@ -1,114 +1,133 @@
 # たばコン 実装計画書
 
-## 1. 今回の正式仕様
-- ゲーム名は「たばコン」、game_slug は `tabakon`、公開URLは `https://chameleonjp.codeberg.page/tabakon/`。
-- Canvas上の砂を削り、30個の🚬を🦊の回収ゾーンへ届けるスマホ向け縦画面パズル。
-- 60秒以内に20個以上届けた時点で成功終了。時間切れで20個未満、またはリタイアで終了。
-- ステージは10種類から開始ごとにランダム選択。色違い🚬、動く仕掛け、複雑な地形、トラップ、分岐ルートを入れ、ランキングはステージ別にしない。
-- 旧仕様の名称、slug、運搬物、届け先、車両配送表現は使わない。
+この文書は、現在実装済みの構造と、今後の改修予定を分けて記録する。未実装の将来案を現在の仕様として扱わない。
 
-## 2. サブエージェントの役割分担
-実プロセスを分けず、次のレビュー観点を明確に分けて作業する。
+## 第1部：現在の実装構造
 
-### 仕様確認担当
-- ゲーム名、URL、game_slug、ランキング仕様の矛盾確認。
-- 旧仕様の残骸がないことを検索で確認。
+### 1. 基本
 
-### ゲーム実装担当
-- Canvas中心で砂削り、🚬疑似物理、🦊到達、トラップ、動く仕掛けを実装。
-- iPhone SEでも動く軽量な処理にする。
+- ゲーム名: たばコン
+- game_slug: `tabakon`
+- 公開URL: `https://chameleonjp.codeberg.page/tabakon/`
+- ゲーム本体: `index.html`
+- 表示Canvas: 320×480
+- 内部ゲーム世界: 320×960
+- 砂グリッド: 48×144
+- 左スクロールバー表示幅: 24px
 
-### UI/UX担当
-- HOME、RULE、READY、PLAYING、RESULT、ERRORの画面を整理。
-- 押しやすいボタン、名前入力、ズーム・長押し・スクロール誤作動対策を実装。
+Canvasは `setupCanvasResolution()` で `devicePixelRatio` に合わせて内部解像度を調整する。ただし論理座標は320×480で、内部世界は `cameraY` と `screenToWorld()` で扱う。
 
-### ランキング担当
-- Supabase Publishable keyのみで共通URLと `submit_score` / `get_best_score_ranking` RPC を使う。
-- 終了時に自動で1回だけ送信し、結果画面に登録ボタンを置かない。
+### 2. 状態管理
 
-### 検査担当
-- 仕様違反、旧仕様残骸、iPhone SE幅、横スクロール、結果後停止、シェアURL、ランキング1回送信を確認。
+現在の状態は `HOME`, `RULE`, `READY`, `PLAYING`, `RESULT`, `ERROR`。`READY` では3、2、1のカウントを行い、`PLAYING` 中だけタイマー、物理、砂削り、当たり判定を進める。`RESULT` では `stopLoop()` でゲームループを止める。
 
-## 3. 実装順序
-1. README.md、docs/SPEC.md、docs/REVIEW_CHECKLIST.md を整備。
-2. index.html にHTML構造、CSS、Canvas、画面状態を実装。
-3. ステージ定義、砂グリッド、🚬生成、仕掛け、トラップを実装。
-4. 入力処理、疑似物理、当たり判定、結果処理を実装。
-5. Supabase送信・ランキング取得・シェア処理を実装。
-6. 旧仕様検索、静的確認、ローカル表示確認を実施。
+### 3. 主な関数
 
-## 4. 作成するファイル
-- `index.html`: ゲーム本体。HTML/CSS/JavaScriptを1ファイルに集約。
-- `README.md`: 概要、操作、ランキング、公開方法、注意事項。
-- `docs/SPEC.md`: 実装仕様。
-- `docs/IMPLEMENTATION_PLAN.md`: 本計画書。
-- `docs/REVIEW_CHECKLIST.md`: 実装後レビュー項目。
+現在のコードに存在する主な関数は次の通り。
 
-## 5. 主要な関数
-- `setState(nextState)`: 画面状態の切り替え。
-- `startReadyCountdown()`: 3、2、1の開始カウント。
-- `startGame()`: PLAYING開始。
-- `resetGame()`: ステージ、砂、🚬、スコア、フラグ初期化。
-- `buildStage()`: 48×72グリッドと地形、トラップ、ゴール、仕掛けを定義。
-- `carveSandAt(x, y)` / `carveLine(from, to)`: タップ・スワイプで砂を削る。
-- `updateGame(dt)`: PLAYING中のみタイマー、仕掛け、🚬、衝突を更新。
-- `updateCigarettes(dt)`: 🚬の疑似物理。
-- `updateMechanisms(dt)`: 動くバー、開閉ゲート、回転障害物。
-- `resolveCollisions(item)`: 砂、壁、仕掛けとの簡易衝突。
-- `checkGoalAndTraps(item)`: 🦊到達とトラップ消失判定。
-- `draw()`: Canvas描画。
-- `finishGame(reason)`: 結果確定、処理停止、スコア固定。
-- `calculateScore(reason)`: 配達スコア計算。
-- `submitScoreOnce(result)`: 自動1回送信。
-- `fetchRanking()`: ベストランキング取得。
-- `shareText(text)`: Web Share APIまたはクリップボード。
+- `setupCanvasResolution()`: Canvas内部解像度を端末の `devicePixelRatio` に合わせる。
+- `makeStage(name, shortName, variant)`: 共通構造を基にステージ差分を生成する。
+- `validateStageGoalAccess(stage)` / `validateAllStages()`: ステージのゴール付近を検査する。
+- `setState(next)`: 画面状態を切り替える。
+- `canvasPoint(e)`: 入力座標を320×480の論理座標へ変換する。
+- `screenToWorld(p)`: 画面座標を `cameraY` 加算後の世界座標へ変換する。
+- `updateCameraFromScrollbar(screenY)`: 左スクロールバー操作で `cameraY` を更新する。
+- `resetGame()`: ステージ、砂、🚬、スコア、フラグを初期化する。
+- `buildStage()`: `STAGES[Math.floor(Math.random() * STAGES.length)]` でステージを選び、砂・壁・仕掛け・トラップ・ゴールを配置する。
+- `beginReadySequence()` / `startReadyCountdown()` / `startGame()`: リセット、カウントダウン、PLAYING開始を行う。
+- `carveEllipse(cx, cy, rx, ry, silent)` / `carveSandAt(x, y)` / `carveLine(a, b)`: 砂削りを行う。
+- `settleSandAround(cx, cy, radius)`: 削った周辺の砂だけを局所的に崩落させる。
+- `solidAt(px, py)`: 世界座標が砂・壁・範囲外かを判定する。
+- `updateCigarettes(dt)`: 🚬の移動、衝突、ゴール、トラップ、消失、停止時間を更新する。
+- `updateMechanisms(dt)`: バー、ゲート、ローターを更新する。
+- `applySlopeRoll(cig, cfg, dt)`: 接地時に斜面方向へ加速する。
+- `resolveCollisions(cig, cfg, dt)`: 砂、壁、仕掛けとの当たり判定を処理する。
+- `checkGoalAndTraps(cig)`: ゴール到達とトラップ消失を判定する。
+- `checkBottomLost(cig, dt)`: 最下部やゴール下に落ちた🚬の消失を判定する。
+- `updateStuckState(cig, dt)`: 停止時間を計測する。
+- `deliverCig(cig)` / `loseCig(cig)`: 到達・喪失を確定する。
+- `checkAllCigarettesResolved()`: activeな🚬の状態から早期終了を判定する。
+- `draw()` と各 `draw*()` 関数: Canvasを描画する。
+- `updateParticles(dt)`: パーティクルを更新する。
+- `updateHud(force)`: HUDを更新する。
+- `finishGame(reason)`: 結果確定、スコア固定、ランキング送信開始を行う。
+- `calculateBreakdown(reason)`: スコア内訳を計算する。
+- `submitScoreOnce(result)`: `submit_score` RPCへ終了時1回だけ送信する。
+- `fetchRanking()`: `get_best_score_ranking` RPCでランキングを取得する。
+- `shareText(text)`: Web Share APIまたはクリップボードでシェアする。
+- `gameLoop(ts)`: `updateMechanisms`、`updateCigarettes`、`checkAllCigarettesResolved`、`updateParticles`、`updateHud`、`draw` の順でPLAYING中の処理を進める。
+- `ensureLoop()` / `stopLoop()`: requestAnimationFrameの開始・停止を行う。
 
-## 6. 状態管理
-- `HOME`, `RULE`, `READY`, `PLAYING`, `RESULT`, `ERROR` を使う。
-- READYではカウントのみ行い、砂削り・物理・当たり判定・スコア加算を行わない。
-- PLAYING中のみゲーム処理を進める。
-- RESULTへ入ったらタイマー、当たり判定、仕掛け更新、スコア加算を止め、結果スコアを固定する。
-- `rankingSubmitted` で送信重複を防止する。
+### 4. 砂
 
-## 7. スコア計算
-配達スコア = 届けた🚬の点数合計 + `Math.floor(残りミリ秒 / 10)` - 失った数×300 - リタイア時5000。
+砂は通常フレームでは静止し、プレイヤーが削った周辺だけ `settleSandAround()` で局所的に崩落する。真下が空なら下へ、真下が埋まっていて斜め下へ移動できる場合は斜めへ崩す。世界全体の砂を毎フレーム動かす方式ではない。
 
-点数は通常1000、赤1500、青1300、黒1700。マイナススコアも許可し送信する。
+### 5. 🚬の物理
 
-## 8. ランキング連携
-- Supabase URLは共通設定 `https://mlpnjgezrnhdxsxolyzj.supabase.co` と Publishable key のみを使う。
-- スコア送信は `submit_score` RPC（`/rest/v1/rpc/submit_score`）へ `p_display_name`, `p_game_slug`, `p_score`, `p_client_version` を送る。
-- `/rest/v1/game_scores` への直接insertと `score_data` 送信は禁止する。
-- ベストランキングは `get_best_score_ranking` RPCを使い、`display_name` と `rank_no` に対応する。
-- 通信失敗時は結果画面を維持し、送信失敗と取得失敗の表示を分ける。
-- ゲームループから通信処理を呼ばない。
+現在は重力、横方向の減速、砂・壁・仕掛けとの当たり判定、接地時の小さい上下速度の停止、斜面方向への加速、表示回転、着地時の軽い潰れ表現、ローターからの力、最下部消失、停止時間計測を実装している。
 
-## 9. 性能予算
-- 60fps目標、難しい場合でも30fpsで安定する設計。
-- 砂は48×72のセルグリッドで削れる地形として管理し、Canvas実サイズから算出した `CELL_W` / `CELL_H` で座標変換する。毎フレーム砂自体を大量移動しない。
-- 🚬は最大30個、仕掛けは最大5個、トラップは最大6か所、パーティクルは最大100個。
-- ゲーム中のDOM更新は残り時間、届けた数、状態表示の3要素以内を中心にする。
-- パーティクル配列を再利用し、毎フレーム大量のオブジェクト生成を避ける。
+未実装のものは、🚬同士の衝突、固定時間更新、休止状態、複数点を使った精密な円と地形の接触判定、物理半径と描画半径の統一である。
 
-## 10. スマホ対応
-- 縦画面基準、最大幅430px、iPhone SE幅でもボタン操作できるサイズ。
-- `touch-action: none`, `user-select: none`, `-webkit-user-select: none`, `-webkit-touch-callout: none` をCanvasとUIに設定。
-- 横スクロール禁止、viewportに `user-scalable=no` を指定。
-- タッチ座標はCanvas内に丸め、画面端のずれを抑える。
+### 6. ステージ
 
-## 11. 実装後の検査方法
-- `rg` で旧仕様文字列、禁止テーブル、管理者用キー表現を検索。
-- `python3 -m http.server` とブラウザ確認、または静的なHTML構文確認を行う。
-- iPhone SE相当の幅で横スクロール・操作性を確認する。
-- 結果画面後に `stopLoop()` で描画ループとゲーム処理が止まり、ランキング送信が1回のみになるコード経路を確認する。
+現在は `makeStage(name, shortName, variant)` による共通生成型。共通の砂、壁、導線を基に、`variant` でゴール位置、危険側、一部の壁、トラップ位置、バー位置と速度、ローターの有無を変える。
 
-## 2画面縦長スクロール化
+ステージ選択はランダムで、同じステージが連続する可能性がある。10回で10種類が一巡する保証はない。
 
-- 表示Canvasは320×480のまま維持し、内部ゲーム世界を320×960にする。
-- 砂グリッドは48×144で管理し、ゲーム状態はすべて世界座標で保持する。
-- 描画時は `cameraY` で世界を上方向にずらし、最後にCanvas左端24pxのスクロールバーUIを画面座標で描く。
-- 入力はタッチ開始位置でカメラ操作と砂削りに分け、左バー領域では砂を削らない。
-- ステージは上層・中上層・中下層・下層を持つ縦長構造にし、10ステージ共通ランキングとSupabase RPCは変更しない。
-- 砂削り入力は `screenToWorld()` で画面座標を世界座標へ変換して処理し、左端24pxのスクロールバー入力とは `inputMode` で分離する。
-- ページ自体は縦スクロールさせず、Canvas表示サイズ320×480を保ったまま `cameraY` で320×960世界の表示範囲を切り替える。
-- 10ステージは48×144前提の縦長配置へ再設計し、ランキングはステージ別にせず共通のまま維持する。
+### 7. ランキング・通信
+
+- Supabase URL: `https://mlpnjgezrnhdxsxolyzj.supabase.co`
+- key: Publishable keyのみ
+- 送信RPC: `submit_score`
+- 取得RPC: `get_best_score_ranking`
+- game_slug: `tabakon`
+- 通信制限時間: 8秒
+- 送信回数: ゲーム終了時に1回
+
+### 8. デバッグ
+
+現在は `window.tabakonDebug` が通常公開時にも作られる。`validateAllStages()` は読み込み時に実行される。
+
+## 第2部：今後の改修予定
+
+以下は未実装の予定であり、現在の実装済み仕様ではない。
+
+### PR2：タイマー、終了判定、非同期通信
+
+- `delivered + activeCount < NEED` の確定失敗判定。
+- プレイヤーの最後の砂削り時刻を含めた停止判定。
+- 一時停止を詰みと誤認しない判定。
+- ランキング通信と結果表示の失敗時挙動の整理。
+
+### PR3：固定時間更新、🚬同士の衝突、判定半径
+
+- 固定時間方式の物理更新。
+- 🚬同士の衝突。
+- 休止状態。
+- 物理半径と描画半径の統一。
+- 複数点を使った精密な円と地形の接触判定。
+
+### PR4：砂の細分化と地形描画の軽量化
+
+- 砂解像度の見直し。
+- より細かい砂表現。
+- 表示範囲に応じた描画最適化。
+
+### PR5：ステージ一巡方式と個別化
+
+- 10回で10ステージを一巡する選択方式。
+- URLによるステージ指定。
+- ステージごとの地形と安全導線の個別化。
+
+### PR6：HUD、説明、失敗理由、操作補助
+
+- HUD改善。
+- ルール説明の整理。
+- 失敗理由の表示。
+- 操作補助表示の追加。
+
+### PR7：デバッグ、検査、公開整備
+
+- `?debug=1` の場合だけ `window.tabakonDebug` を公開する。
+- 公開前検査の自動化。
+- レビュー用チェック項目の更新。
