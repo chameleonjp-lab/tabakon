@@ -684,7 +684,8 @@
   }
 
   function checkAllCigarettesResolved(nowPerf = performance.now()) {
-    if (state !== STATES.PLAYING || pendingClear) return true;
+    if (state !== STATES.PLAYING) return true;
+    if (pendingClear) return false;
     if (delivered >= NEED) {
       finishGame('clear', 'threshold_clear');
       return true;
