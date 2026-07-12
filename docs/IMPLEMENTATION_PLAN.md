@@ -19,7 +19,7 @@ Canvasは `setupCanvasResolution()` で `devicePixelRatio` に合わせて内部
 
 ### 2. 状態管理
 
-現在の状態は `HOME`, `RULE`, `READY`, `PLAYING`, `RESULT`, `ERROR`。`READY` では3、2、1のカウントを行い、`PLAYING` 中だけタイマー、物理、砂削り、当たり判定を進める。`RESULT` では `stopLoop()` でゲームループを止める。
+現在の状態は `HOME`, `RULE`, `READY`, `PLAYING`, `RESULT`, `ERROR`。`READY` では3、2、1のカウントを行い、`PLAYING` 開始時に `startSessionClock()` で60秒の期限を設定する。`PLAYING` 中だけタイマー、物理、砂削り、当たり判定を進め、残り時間は `syncRemainingTime()` で絶対期限から同期する。`RESULT` では `stopLoop()` でゲームループを止める。
 
 ### 3. 主な関数
 
@@ -35,6 +35,7 @@ Canvasは `setupCanvasResolution()` で `devicePixelRatio` に合わせて内部
 - `resetGame()`: ステージ、砂、🚬、スコア、フラグを初期化する。
 - `buildStage()`: `STAGES[Math.floor(Math.random() * STAGES.length)]` でステージを選び、砂・壁・仕掛け・トラップ・ゴールを配置する。
 - `beginReadySequence()` / `startReadyCountdown()` / `startGame()`: リセット、カウントダウン、PLAYING開始を行う。
+- `startSessionClock()` / `syncRemainingTime()`: `performance.now()` と `Date.now()` の期限から残り時間を同期する。
 - `carveEllipse(cx, cy, rx, ry, silent)` / `carveSandAt(x, y)` / `carveLine(a, b)`: 砂削りを行う。
 - `settleSandAround(cx, cy, radius)`: 削った周辺の砂だけを局所的に崩落させる。
 - `solidAt(px, py)`: 世界座標が砂・壁・範囲外かを判定する。
@@ -46,14 +47,16 @@ Canvasは `setupCanvasResolution()` で `devicePixelRatio` に合わせて内部
 - `checkBottomLost(cig, dt)`: 最下部やゴール下に落ちた🚬の消失を判定する。
 - `updateStuckState(cig, dt)`: 停止時間を計測する。
 - `deliverCig(cig)` / `loseCig(cig)`: 到達・喪失を確定する。
-- `checkAllCigarettesResolved()`: activeな🚬の状態から早期終了を判定する。
+- `checkAllCigarettesResolved(nowPerf)`: activeな🚬の状態、成功不能、ゴール下、進展なしから早期終了を判定する。
 - `draw()` と各 `draw*()` 関数: Canvasを描画する。
 - `updateParticles(dt)`: パーティクルを更新する。
 - `updateHud(force)`: HUDを更新する。
-- `finishGame(reason)`: 結果確定、スコア固定、ランキング送信開始を行う。
+- `finishGame(reason, endCause)`: `resultFinalized` で二重確定を防ぎ、結果、`endCause`、`playId`、スコア、ランキング通信開始を一度だけ確定する。
 - `calculateBreakdown(reason)`: スコア内訳を計算する。
-- `submitScoreOnce(result)`: `submit_score` RPCへ終了時1回だけ送信する。
-- `fetchRanking()`: `get_best_score_ranking` RPCでランキングを取得する。
+- `submitScoreOnce(result)`: `playId` ごとに `submit_score` RPCへ終了時1回だけ送信する。
+- `fetchRankingData()`: `get_best_score_ranking` RPCでランキング配列を取得する。
+- `renderRankingRows(rows)`: 取得済みランキング配列を結果画面へ描画する。
+- `runResultNetwork(result, resultRequestId)`: 送信と取得を分離し、古い結果通信がDOMを書き換えないよう確認しながら実行する。
 - `shareText(text)`: Web Share APIまたはクリップボードでシェアする。
 - `gameLoop(ts)`: `updateMechanisms`、`updateCigarettes`、`checkAllCigarettesResolved`、`updateParticles`、`updateHud`、`draw` の順でPLAYING中の処理を進める。
 - `ensureLoop()` / `stopLoop()`: requestAnimationFrameの開始・停止を行う。
@@ -82,22 +85,26 @@ Canvasは `setupCanvasResolution()` で `devicePixelRatio` に合わせて内部
 - 取得RPC: `get_best_score_ranking`
 - game_slug: `tabakon`
 - 通信制限時間: 8秒
-- 送信回数: ゲーム終了時に1回
+- 送信回数: `playId` ごとにゲーム終了時1回
 
 ### 8. デバッグ
 
 現在は `window.tabakonDebug` が通常公開時にも作られる。`validateAllStages()` は読み込み時に実行される。
 
+### 9. PR2で実装済みのセッション管理
+
+PR2では `playId`、`resultRequestId`、`resultFinalized`、`endCause` を使い、1プレイの時間、終了、結果画面、ランキング通信を一度だけ完了させる。20個到達時は結果を固定し、送信失敗時もランキング取得を試す。
+
 ## 第2部：今後の改修予定
 
 以下は未実装の予定であり、現在の実装済み仕様ではない。
 
-### PR2：タイマー、終了判定、非同期通信
+### PR2：タイマー、終了判定、非同期通信（実装済み）
 
-- `delivered + activeCount < NEED` の確定失敗判定。
-- プレイヤーの最後の砂削り時刻を含めた停止判定。
-- 一時停止を詰みと誤認しない判定。
-- ランキング通信と結果表示の失敗時挙動の整理。
+- `delivered + activeCount < NEED` の確定失敗判定を実装済み。
+- プレイヤーの最後の砂削り時刻を含めた停止判定を実装済み。
+- 一時停止を詰みと誤認しない判定を実装済み。
+- ランキング通信と結果表示の失敗時挙動の整理を実装済み。
 
 ### PR3：固定時間更新、🚬同士の衝突、判定半径
 
