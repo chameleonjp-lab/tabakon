@@ -85,6 +85,10 @@
     black: { score: 1700, ring: '#161018', fill: '#e3dbe8', gravity: 930, bounce: 0.20, roll: 0.98, barKick: 1.15, nearTrap: 12 }
   };
   const BAD_COMMENT = 'ｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀﾈｯﾄﾔﾒﾛｲﾝﾀｰﾈｯﾄﾊｱｸﾀﾞｲﾝﾀｰﾈｯﾄﾊﾊﾞｶﾆﾅﾙｲﾝﾀｰﾈｯﾄﾊﾉｳｦｵｾﾝｽﾙｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀ...';
+  const STUCK_ARM_MS = 2000;
+  const NO_PROGRESS_END_MS = 8000;
+  const MEANINGFUL_MOVE_PX = 0.5;
+  const MEANINGFUL_SPEED_PX = 10;
 
   // 2. Supabase設定
   const SUPABASE_URL = 'https://mlpnjgezrnhdxsxolyzj.supabase.co';
@@ -243,9 +247,20 @@
   let lost = 0;
   let deliveredScore = 0;
   let remainingMs = LIMIT_MS;
+  let playDeadlinePerfMs = 0;
+  let playDeadlineWallMs = 0;
+  let clearRemainingMs = null;
   let lastTs = 0;
   let rafId = 0;
   let rankingSubmitted = false;
+  let resultFinalized = false;
+  let playSequence = 0;
+  let currentPlayId = 0;
+  let resultRequestSequence = 0;
+  let activeResultRequestId = 0;
+  let lastSuccessfulCarveAt = 0;
+  let lastMeaningfulMotionAt = 0;
+  const submittedPlayIds = new Set();
   let resultData = null;
   let inputMode = INPUT_MODE.NONE;
   let lastPoint = null;
@@ -288,7 +303,7 @@
       draw();
       return;
     }
-    if (state !== STATES.PLAYING) return;
+    if (state !== STATES.PLAYING || pendingClear) return;
     inputMode = INPUT_MODE.CARVE;
     lastPoint = screenToWorld(p);
     carveSandAt(lastPoint.x, lastPoint.y);
@@ -302,7 +317,7 @@
       draw();
       return;
     }
-    if (state !== STATES.PLAYING || !lastPoint) return;
+    if (state !== STATES.PLAYING || pendingClear || !lastPoint) return;
     const worldPoint = screenToWorld(p);
     carveLine(lastPoint, worldPoint);
     lastPoint = worldPoint;
@@ -334,7 +349,14 @@
     lost = 0;
     deliveredScore = 0;
     remainingMs = LIMIT_MS;
+    playDeadlinePerfMs = 0;
+    playDeadlineWallMs = 0;
+    clearRemainingMs = null;
     rankingSubmitted = false;
+    resultFinalized = false;
+    activeResultRequestId = 0;
+    lastSuccessfulCarveAt = 0;
+    lastMeaningfulMotionAt = 0;
     resultData = null;
     particles.length = 0;
     brightMarks.length = 0;
@@ -395,7 +417,32 @@
       showError('ゲーム開始処理に失敗しました。ページを再読み込みしてください。', error);
     }
   }
-  function startGame() { console.log('[tabakon] playing start'); remainingMs = LIMIT_MS; lastTs = performance.now(); setState(STATES.PLAYING); ensureLoop(); }
+  function startSessionClock() {
+    const nowPerf = performance.now();
+    const nowWall = Date.now();
+    playDeadlinePerfMs = nowPerf + LIMIT_MS;
+    playDeadlineWallMs = nowWall + LIMIT_MS;
+    remainingMs = LIMIT_MS;
+  }
+  function syncRemainingTime(nowPerf = performance.now(), nowWall = Date.now()) {
+    if (!playDeadlinePerfMs || !playDeadlineWallMs) return remainingMs;
+    const perfRemaining = playDeadlinePerfMs - nowPerf;
+    const wallRemaining = playDeadlineWallMs - nowWall;
+    remainingMs = Math.max(0, Math.min(perfRemaining, wallRemaining));
+    return remainingMs;
+  }
+  function startGame() {
+    console.log('[tabakon] playing start');
+    currentPlayId = ++playSequence;
+    activeResultRequestId = 0;
+    startSessionClock();
+    const nowPerf = performance.now();
+    lastSuccessfulCarveAt = nowPerf;
+    lastMeaningfulMotionAt = nowPerf;
+    lastTs = nowPerf;
+    setState(STATES.PLAYING);
+    ensureLoop();
+  }
 
   // 9. 砂削り処理
   function carveEllipse(cx, cy, rx, ry, silent = false) {
@@ -453,13 +500,19 @@
     }
   }
   function carveSandAt(x, y) {
+    if (pendingClear) return 0;
     const removed = carveEllipse(x, y, 20, 20);
-    if (removed > 0) spawnParticles(x, y, Math.min(8, 2 + removed), '#e6bd67');
+    if (removed > 0) {
+      lastSuccessfulCarveAt = performance.now();
+      spawnParticles(x, y, Math.min(8, 2 + removed), '#e6bd67');
+    }
+    return removed;
   }
   function carveLine(a, b) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 9));
+    if (pendingClear) return;
     for (let i = 0; i <= steps; i++) carveSandAt(a.x + dx * i / steps, a.y + dy * i / steps);
   }
   function solidAt(px, py) {
@@ -472,7 +525,7 @@
   // 10. 🚬の移動処理
   function updateCigarettes(dt) {
     for (const cig of cigarettes) {
-      if (state !== STATES.PLAYING) break;
+      if (state !== STATES.PLAYING || pendingClear) break;
       if (!cig.active) continue;
       const cfg = TYPES[cig.type];
       cig.vy += cfg.gravity * dt;
@@ -596,49 +649,64 @@
     const dy = cig.y - (cig.lastY ?? cig.y);
     const moved = Math.hypot(dx, dy);
     const speed = Math.hypot(cig.vx, cig.vy);
+    if (moved >= MEANINGFUL_MOVE_PX || speed >= MEANINGFUL_SPEED_PX) {
+      lastMeaningfulMotionAt = performance.now();
+    }
     if (moved < 0.35 && speed < 8) cig.stuckTimer = (cig.stuckTimer || 0) + dt;
     else cig.stuckTimer = 0;
     cig.lastX = cig.x;
     cig.lastY = cig.y;
   }
   function deliverCig(cig) {
-    if (!cig.active) return;
+    if (!cig.active || pendingClear) return;
     cig.active = false;
     cig.delivered = true;
     delivered++;
     deliveredScore += TYPES[cig.type].score;
     deliveredFlash = 0.38;
+    lastMeaningfulMotionAt = performance.now();
     spawnParticles(cig.x, cig.y, 14, '#65d694');
-    if (delivered >= NEED && !pendingClear) { pendingClear = true; successFlash = 0.42; }
+    if (delivered >= NEED && !pendingClear) {
+      syncRemainingTime();
+      clearRemainingMs = remainingMs;
+      pendingClear = true;
+      successFlash = 0.42;
+    }
   }
   function loseCig(cig) {
-    if (!cig.active) return;
+    if (!cig.active || pendingClear) return;
     cig.active = false;
     cig.lost = true;
     lost++;
     lostFlash = 0.38;
+    lastMeaningfulMotionAt = performance.now();
     spawnParticles(cig.x, cig.y, 12, '#2b1730');
   }
 
-  function checkAllCigarettesResolved() {
-    if (state !== STATES.PLAYING) return true;
+  function checkAllCigarettesResolved(nowPerf = performance.now()) {
+    if (state !== STATES.PLAYING || pendingClear) return true;
+    if (delivered >= NEED) {
+      finishGame('clear', 'threshold_clear');
+      return true;
+    }
     const active = cigarettes.filter(c => c.active);
     if (active.length === 0) {
-      finishGame(delivered >= NEED ? 'clear' : 'fail');
+      finishGame(delivered >= NEED ? 'clear' : 'fail', 'all_resolved');
+      return true;
+    }
+    if (delivered + active.length < NEED) {
+      finishGame('fail', 'insufficient_remaining');
       return true;
     }
     if (active.every(c => c.y > goal.y + goal.h + 80)) {
-      finishGame(delivered >= NEED ? 'clear' : 'fail');
+      finishGame(delivered >= NEED ? 'clear' : 'fail', 'below_goal');
       return true;
     }
-    const allUnplayable = active.every(c => {
-      const belowGoal = c.y > goal.y + goal.h + 40;
-      const nearBottom = c.y > WORLD_H - 36;
-      const stuckTooLong = (c.stuckTimer || 0) >= 2.0;
-      return belowGoal || nearBottom || stuckTooLong;
-    });
-    if (allUnplayable) {
-      finishGame(delivered >= NEED ? 'clear' : 'fail');
+    const allStuckArmed = active.every(c => ((c.stuckTimer || 0) * 1000) >= STUCK_ARM_MS);
+    const noMotionLongEnough = nowPerf - lastMeaningfulMotionAt >= NO_PROGRESS_END_MS;
+    const noCarveLongEnough = nowPerf - lastSuccessfulCarveAt >= NO_PROGRESS_END_MS;
+    if (allStuckArmed && noMotionLongEnough && noCarveLongEnough) {
+      finishGame('fail', 'stalled');
       return true;
     }
     return false;
@@ -891,25 +959,29 @@
   function playTone() { /* 音はデフォルト無効。ブラウザ制限と軽量性を優先。 */ }
 
   // 16. 結果処理
-  function calculateBreakdown(reason) {
-    const timeBonus = Math.floor(Math.max(0, remainingMs) / 10);
+  function calculateBreakdown(reason, fixedRemainingMs = remainingMs) {
+    const timeBonus = Math.floor(Math.max(0, fixedRemainingMs) / 10);
     const lostPenalty = lost * 300;
     const retirePenalty = reason === 'retire' ? 5000 : 0;
     return { deliveredPoints: deliveredScore, timeBonus, lostPenalty, retirePenalty, total: deliveredScore + timeBonus - lostPenalty - retirePenalty };
   }
   function calculateScore(reason) { return calculateBreakdown(reason).total; }
-  function finishGame(reason) {
-    if (state === STATES.RESULT) return;
+  function finishGame(reason, endCause = reason) {
+    if (resultFinalized) return;
+    resultFinalized = true;
+    if (state === STATES.PLAYING && (reason !== 'clear' || clearRemainingMs === null)) syncRemainingTime();
+    const finalRemainingMs = reason === 'clear' && clearRemainingMs !== null ? clearRemainingMs : Math.max(0, remainingMs);
+    remainingMs = finalRemainingMs;
     stopLoop();
-    const breakdown = calculateBreakdown(reason);
-    resultData = { reason, score: breakdown.total, breakdown, delivered, lost, remainingMs: Math.max(0, remainingMs), playerName: $('playerName').value.trim() || 'ななし', stageName: currentStage.name };
+    const breakdown = calculateBreakdown(reason, finalRemainingMs);
+    resultData = { reason, endCause, playId: currentPlayId, score: breakdown.total, breakdown, delivered, lost, remainingMs: Math.max(0, finalRemainingMs), playerName: $('playerName').value.trim() || 'ななし', stageName: currentStage.name };
     setState(STATES.RESULT);
     $('resultTitle').textContent = reason === 'clear' ? '結果：成功' : reason === 'retire' ? '結果：リタイア' : '結果：失敗';
     $('resultScore').textContent = breakdown.total + '点';
     $('badComment').textContent = BAD_COMMENT;
     $('badComment').classList.toggle('hide', !(breakdown.total < 0 || reason === 'fail' || reason === 'retire'));
-    $('resultDelivered').textContent = '届けた ' + delivered + '個';
-    $('resultLost').textContent = '失った ' + lost + '個';
+    $('resultDelivered').textContent = '届けた ' + resultData.delivered + '個';
+    $('resultLost').textContent = '失った ' + resultData.lost + '個';
     $('resultTime').textContent = '残り ' + (resultData.remainingMs / 1000).toFixed(1) + '秒';
     $('resultStage').textContent = 'ステージ：' + resultData.stageName;
     $('scoreBreakdown').innerHTML = '届けた点：' + breakdown.deliveredPoints.toLocaleString() + '点<br>' +
@@ -919,15 +991,19 @@
       '合計：' + breakdown.total.toLocaleString() + '点';
     $('rankingStatus').textContent = 'ランキング送信中…';
     $('rankingBox').textContent = '読み込み中…';
-    submitScoreOnce(resultData).then(() => fetchRanking()).catch(() => { $('rankingStatus').textContent = 'ランキング送信に失敗しました'; $('rankingBox').textContent = 'ランキング取得に失敗しました'; });
+    const requestId = ++resultRequestSequence;
+    activeResultRequestId = requestId;
+    runResultNetwork(resultData, requestId);
   }
 
-  // 17. ランキング送信
+  function isCurrentResultRequest(requestId) {
+    return state === STATES.RESULT && requestId === activeResultRequestId;
+  }
   async function supa(path, opts = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
-      const res = await fetch(SUPABASE_URL + path, { ...opts, signal: controller.signal, headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal', ...(opts.headers || {}) } });
+      const res = await fetch(SUPABASE_URL + path, { ...opts, signal: controller.signal, headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal', ...(opts.headers || {}) } });
       if (!res.ok) throw new Error('supabase');
       return res.status === 204 ? null : res.json();
     } finally {
@@ -935,27 +1011,44 @@
     }
   }
   async function submitScoreOnce(r) {
-    if (rankingSubmitted) return;
-    rankingSubmitted = true;
+    if (submittedPlayIds.has(r.playId)) return;
+    submittedPlayIds.add(r.playId);
+    while (submittedPlayIds.size > 32) submittedPlayIds.delete(submittedPlayIds.values().next().value);
     await supa('/rest/v1/rpc/submit_score', { method: 'POST', body: JSON.stringify({ p_display_name: r.playerName, p_game_slug: GAME_SLUG, p_score: r.score, p_client_version: 'tabakon-20260614-gameplay2' }) });
-    $('rankingStatus').textContent = 'ランキング送信済み';
   }
-
-  // 18. ランキング取得
-  async function fetchRanking() {
+  async function fetchRankingData() {
+    const data = await supa('/rest/v1/rpc/get_best_score_ranking', { method: 'POST', headers: { Prefer: '' }, body: JSON.stringify({ p_game_slug: GAME_SLUG, p_limit: 10 }) });
+    return Array.isArray(data) ? data : [];
+  }
+  function renderRankingRows(list) {
+    $('rankingBox').innerHTML = list.length ? '<ol>' + list.map((r, index) => {
+      const name = r.display_name || r.player_name || r.name || 'ななし';
+      const score = r.score ?? r.best_score ?? r.first_score ?? 0;
+      const rank = r.rank_no || r.rank || index + 1;
+      return '<li>' + rank + '位 ' + escapeHtml(name) + '：' + Number(score).toLocaleString() + '点</li>';
+    }).join('') + '</ol>' : 'まだランキングがありません';
+  }
+  async function runResultNetwork(result, requestId) {
+    let submitOk = false;
     try {
-      const data = await supa('/rest/v1/rpc/get_best_score_ranking', { method: 'POST', headers: { Prefer: '' }, body: JSON.stringify({ p_game_slug: GAME_SLUG, p_limit: 10 }) });
-      const list = Array.isArray(data) ? data : [];
-      $('rankingBox').innerHTML = list.length ? '<ol>' + list.map((r, index) => {
-        const name = r.display_name || r.player_name || r.name || 'ななし';
-        const score = r.score ?? r.best_score ?? r.first_score ?? 0;
-        const rank = r.rank_no || r.rank || index + 1;
-        return '<li>' + rank + '位 ' + escapeHtml(name) + '：' + Number(score).toLocaleString() + '点</li>';
-      }).join('') + '</ol>' : 'まだランキングがありません';
+      await submitScoreOnce(result);
+      submitOk = true;
     } catch (e) {
+      submitOk = false;
+    }
+    if (!isCurrentResultRequest(requestId)) return;
+    $('rankingStatus').textContent = submitOk ? 'ランキング送信済み' : 'ランキング送信に失敗しました';
+    $('rankingBox').textContent = 'ランキング読み込み中…';
+    try {
+      const rows = await fetchRankingData();
+      if (!isCurrentResultRequest(requestId)) return;
+      renderRankingRows(rows);
+    } catch (e) {
+      if (!isCurrentResultRequest(requestId)) return;
       $('rankingBox').textContent = 'ランキング取得に失敗しました';
     }
   }
+
   function escapeHtml(s) { return String(s).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
 
   // 19. シェア
@@ -976,18 +1069,20 @@
     rafId = requestAnimationFrame(gameLoop);
     const dt = Math.min(0.033, (ts - lastTs) / 1000 || 0);
     lastTs = ts;
-    remainingMs -= dt * 1000;
+    if (!pendingClear) syncRemainingTime(ts);
     deliveredFlash = Math.max(0, deliveredFlash - dt);
     lostFlash = Math.max(0, lostFlash - dt);
     if (successFlash > 0) {
       successFlash = Math.max(0, successFlash - dt);
-      if (successFlash === 0 && pendingClear) { finishGame('clear'); return; }
+      if (successFlash === 0 && pendingClear) { finishGame('clear', 'threshold_clear'); return; }
     }
-    if (remainingMs <= 0) { remainingMs = 0; finishGame(delivered >= NEED ? 'clear' : 'fail'); return; }
-    updateMechanisms(dt);
-    updateCigarettes(dt);
+    if (!pendingClear && remainingMs <= 0) { remainingMs = 0; finishGame(delivered >= NEED ? 'clear' : 'fail', 'timeout'); return; }
+    if (!pendingClear) {
+      updateMechanisms(dt);
+      updateCigarettes(dt);
+    }
     if (state !== STATES.PLAYING) return;
-    if (checkAllCigarettesResolved()) return;
+    if (checkAllCigarettesResolved(ts)) return;
     updateParticles(dt);
     updateHud();
     draw();
@@ -1016,13 +1111,22 @@
       $('backHomeBtn').onclick = () => setState(STATES.HOME);
       $('errorBackBtn').onclick = () => setState(STATES.HOME);
       $('retryBtn').onclick = () => beginReadySequence();
-      $('retireBtn').onclick = () => { if (state === STATES.PLAYING && confirm('リタイアすると-5000点のペナルティです。やめますか？')) finishGame('retire'); };
+      $('retireBtn').onclick = () => { if (state === STATES.PLAYING && confirm('リタイアすると-5000点のペナルティです。やめますか？')) finishGame('retire', 'retire'); };
       $('homeShareBtn').onclick = () => shareText(homeShareText());
       $('resultShareBtn').onclick = () => resultData && shareText(resultShareText());
       ['touchstart', 'mousedown'].forEach(ev => canvas.addEventListener(ev, beginInput, { passive: false }));
       ['touchmove', 'mousemove'].forEach(ev => canvas.addEventListener(ev, moveInput, { passive: false }));
       ['touchend', 'touchcancel', 'mouseup', 'mouseleave'].forEach(ev => canvas.addEventListener(ev, endInput, { passive: false }));
       document.addEventListener('gesturestart', e => e.preventDefault());
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && state === STATES.PLAYING) {
+          if (pendingClear) return;
+          syncRemainingTime();
+          if (delivered >= NEED) finishGame('clear', 'threshold_clear');
+          else if (remainingMs <= 0) finishGame('fail', 'timeout');
+          else { updateHud(); draw(); }
+        }
+      });
       let lastTouch = 0;
       document.addEventListener('touchend', e => { const now = Date.now(); if (now - lastTouch < 350) e.preventDefault(); lastTouch = now; }, { passive: false });
       resetGame();
