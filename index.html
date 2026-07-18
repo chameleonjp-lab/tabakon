@@ -157,7 +157,7 @@
       id: 'stage1-strategy', strategy: true,
       name: 'ステージ1：三室の選択', shortName: '三室の選択',
       strategyHint: '2室以上を開けよう　左=安全 / 中央=速攻 / 右=高得点',
-      spawnClusters: [{ x: 64, y: 48 }, { x: 166, y: 48 }, { x: 264, y: 48 }],
+      spawnClusters: [{ x: 64, y: 48 }, { x: 166.67, y: 48 }, { x: 264, y: 48 }],
       spawnSpacing: 16,
       typePlan: [...STAGE1_TYPE_PLAN],
       rects: [
@@ -291,6 +291,21 @@
   function countTypes(list) {
     return list.reduce((acc, type) => { acc[type] = (acc[type] || 0) + 1; return acc; }, {});
   }
+  function stageSpawnPosition(stage, i) {
+    const clusters = stage.spawnClusters || SPAWN_CLUSTERS;
+    const spacing = stage.spawnSpacing || 17;
+    const cluster = clusters[Math.floor(i / 10)];
+    return { x: cluster.x + ((i % 5) - 2) * spacing, y: cluster.y + Math.floor((i % 10) / 5) * spacing };
+  }
+  function spawnIntersectsStageWall(stage, point, radius = BALL_RADIUS) {
+    return stage.rects.some(rect => {
+      if (rect.kind !== 'wall') return false;
+      const world = rectToWorld(rect);
+      const nearestX = clamp(point.x, world.x, world.x + world.w);
+      const nearestY = clamp(point.y, world.y, world.y + world.h);
+      return (point.x - nearestX) ** 2 + (point.y - nearestY) ** 2 < (radius - 0.01) ** 2;
+    });
+  }
   function validateStageOneStrategy(stage) {
     if (!stage.strategy) return [];
     const warnings = [];
@@ -306,6 +321,15 @@
     if (stageHasWallAt(stage, 24, 102)) warnings.push('第3障壁の中央開口が塞がっている');
     for (const x of [8, 27, 40]) if (stageHasWallAt(stage, x, 34)) warnings.push('第1障壁の室別出口が塞がっている: ' + x);
     for (const x of [10, 36]) if (stageHasWallAt(stage, x, 66)) warnings.push('第2障壁の左右開口が塞がっている: ' + x);
+    const spawnPoints = Array.from({ length: TOTAL }, (_, i) => stageSpawnPosition(stage, i));
+    for (let i = 0; i < spawnPoints.length; i++) {
+      if (spawnIntersectsStageWall(stage, spawnPoints[i])) warnings.push('初期配置が固定壁へ接触している: ' + i);
+      for (let j = i + 1; j < spawnPoints.length; j++) {
+        if (Math.hypot(spawnPoints[i].x - spawnPoints[j].x, spawnPoints[i].y - spawnPoints[j].y) < BALL_RADIUS * 2 - 0.01) {
+          warnings.push('初期配置が重なっている: ' + i + '/' + j);
+        }
+      }
+    }
     return warnings;
   }
   function validateAllStages() {
@@ -432,10 +456,7 @@
 
   // 8. 初期化・時計
   function spawnPosition(i) {
-    const clusters = currentStage.spawnClusters || SPAWN_CLUSTERS;
-    const spacing = currentStage.spawnSpacing || 17;
-    const cluster = clusters[Math.floor(i / 10)];
-    return { x: cluster.x + ((i % 5) - 2) * spacing, y: cluster.y + Math.floor((i % 10) / 5) * spacing };
+    return stageSpawnPosition(currentStage, i);
   }
   function resetGame() {
     delivered = 0; lost = 0; deliveredScore = 0; remainingMs = LIMIT_MS;
