@@ -1,0 +1,35 @@
+name: Apply targeted stage1 patch
+
+on:
+  push:
+    branches:
+      - feat/tabakon-p0c-stage1-strategy
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[stage1-targeted]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply targeted patch and validate
+        run: python3 tools/apply_stage1_targeted.py
+      - name: Validate staged diff
+        run: |
+          git add -A
+          git diff --cached --check
+          test ! -e .github/workflows/apply-stage1-targeted.yml
+          test ! -e tools/apply_stage1_targeted.py
+      - name: Commit targeted result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat: apply targeted stage1 strategy patch [stage1-targeted]"
+          git push
