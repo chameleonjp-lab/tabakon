@@ -111,6 +111,9 @@
   const WAKE_IMPULSE = 12;
   const WAKE_RELATIVE_SPEED = 8;
   const ROTOR_CONTACT_COOLDOWN = 0.05;
+  const CARVE_RADIUS = 11;
+  const CARVE_STEP = 5;
+  const CARVE_SETTLE_PADDING = 10;
 
   // 2. Supabase設定
   const SUPABASE_URL = 'https://mlpnjgezrnhdxsxolyzj.supabase.co';
@@ -141,7 +144,7 @@
   const cellCenterY = cellY => cellY * CELL_H + CELL_H / 2;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-  // 4. ステージ定義（配置はPR3で変更しない）
+  // 4. ステージ定義（配置はP0-Cで再設計）
   const COMMON_WALLS = [
     { kind: 'wall', x: 0, y: 0, w: 2, h: 144 },
     { kind: 'wall', x: 46, y: 0, w: 2, h: 144 },
@@ -260,6 +263,7 @@
   let resultData = null;
   let inputMode = INPUT_MODE.NONE;
   let lastPoint = null;
+  let carveStroke = null;
   let cameraY = 0;
   let loopRunning = false;
   let deliveredFlash = 0;
@@ -269,10 +273,11 @@
   let readyTimer = 0;
 
   function setState(next) {
+    if (state === STATES.PLAYING && next !== STATES.PLAYING && inputMode === INPUT_MODE.CARVE) finishCarveStroke();
     state = next;
     Object.values(screens).forEach(s => s.classList.remove('active'));
     screens[next].classList.add('active');
-    if (next !== STATES.PLAYING) { inputMode = INPUT_MODE.NONE; lastPoint = null; }
+    if (next !== STATES.PLAYING) { inputMode = INPUT_MODE.NONE; lastPoint = null; carveStroke = null; }
   }
 
   // 6. 入力
@@ -299,7 +304,7 @@
     if (state !== STATES.PLAYING || pendingClear) return;
     inputMode = INPUT_MODE.CARVE;
     lastPoint = screenToWorld(p);
-    carveSandAt(lastPoint.x, lastPoint.y);
+    beginCarveStroke(lastPoint);
   }
   function moveInput(e) {
     if (inputMode === INPUT_MODE.NONE) return;
@@ -315,7 +320,12 @@
     carveLine(lastPoint, worldPoint);
     lastPoint = worldPoint;
   }
-  function endInput(e) { if (e) e.preventDefault(); inputMode = INPUT_MODE.NONE; lastPoint = null; }
+  function endInput(e) {
+    if (e) e.preventDefault();
+    if (inputMode === INPUT_MODE.CARVE) finishCarveStroke();
+    inputMode = INPUT_MODE.NONE;
+    lastPoint = null;
+  }
 
   // 7. ステージ構築
   function fillRectCells(x, y, w, h, value) {
@@ -342,7 +352,7 @@
     playDeadlinePerfMs = 0; playDeadlineWallMs = 0; clearRemainingMs = null;
     resultFinalized = false; activeResultRequestId = 0; lastSuccessfulCarveAt = 0; lastMeaningfulMotionAt = 0;
     resultData = null; particles.length = 0; brightMarks.length = 0;
-    deliveredFlash = 0; lostFlash = 0; successFlash = 0; pendingClear = false; cameraY = 0; physicsAccumulator = 0;
+    deliveredFlash = 0; lostFlash = 0; successFlash = 0; pendingClear = false; cameraY = 0; physicsAccumulator = 0; carveStroke = null;
     buildStage();
     cigarettes = [];
     const typePlan = ['normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','red','blue','normal','red','blue','normal','red','blue','normal','black','normal','red','blue','normal','red','blue','normal','black','normal','black'];
@@ -419,17 +429,15 @@
       const px = cellCenterX(x), py = cellCenterY(y);
       if (((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2 <= 1 && grid[idx(x, y)] === 1) { grid[idx(x, y)] = 0; removed++; }
     }
-    if (!silent && removed > 0) {
-      settleSandAround(cx, cy, Math.max(rx, ry) + 10);
-      brightMarks.push({ x: cx, y: cy, rx, ry, life: 0.22 });
-    }
+    if (!silent && removed > 0) brightMarks.push({ x: cx, y: cy, rx, ry, life: 0.22 });
     return removed;
   }
-  function settleSandAround(cx, cy, radius) {
-    const minX = Math.max(1, Math.floor((cx - radius) / CELL_W));
-    const maxX = Math.min(GRID_W - 2, Math.ceil((cx + radius) / CELL_W));
-    const minY = Math.max(1, Math.floor((cy - radius) / CELL_H));
-    const maxY = Math.min(GRID_H - 2, Math.ceil((cy + radius) / CELL_H) + 6);
+  function settleSandBounds(minWorldX, minWorldY, maxWorldX, maxWorldY) {
+    const minX = Math.max(1, Math.floor((minWorldX - CARVE_SETTLE_PADDING) / CELL_W));
+    const maxX = Math.min(GRID_W - 2, Math.ceil((maxWorldX + CARVE_SETTLE_PADDING) / CELL_W));
+    const minY = Math.max(1, Math.floor((minWorldY - CARVE_SETTLE_PADDING) / CELL_H));
+    const maxY = Math.min(GRID_H - 2, Math.ceil((maxWorldY + CARVE_SETTLE_PADDING) / CELL_H) + 6);
+    if (minX > maxX || minY > maxY) return;
     const passes = Math.min(24, (maxY - minY + 1) * 2);
     for (let p = 0; p < passes; p++) {
       let moved = false;
@@ -450,26 +458,75 @@
       if (!moved) break;
     }
   }
+  function settleSandAround(cx, cy, radius) { settleSandBounds(cx - radius, cy - radius, cx + radius, cy + radius); }
   function wakeCigarette(cig) { cig.sleeping = false; cig.sleepTimer = 0; }
   function wakeCigarettesNear(x, y, radius = 56) {
     const rr = radius * radius;
     for (const cig of cigarettes) if (cig.active && (cig.x - x) ** 2 + (cig.y - y) ** 2 <= rr) wakeCigarette(cig);
   }
+  function createCarveStroke() {
+    return { removed: 0, minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity, lastRemovedX: 0, lastRemovedY: 0 };
+  }
+  function recordCarvePoint(x, y) {
+    if (!carveStroke) carveStroke = createCarveStroke();
+    const removed = carveEllipse(x, y, CARVE_RADIUS, CARVE_RADIUS, true);
+    if (removed <= 0) return 0;
+    carveStroke.removed += removed;
+    carveStroke.minX = Math.min(carveStroke.minX, x - CARVE_RADIUS);
+    carveStroke.minY = Math.min(carveStroke.minY, y - CARVE_RADIUS);
+    carveStroke.maxX = Math.max(carveStroke.maxX, x + CARVE_RADIUS);
+    carveStroke.maxY = Math.max(carveStroke.maxY, y + CARVE_RADIUS);
+    carveStroke.lastRemovedX = x;
+    carveStroke.lastRemovedY = y;
+    lastSuccessfulCarveAt = performance.now();
+    wakeCigarettesNear(x, y, CARVE_RADIUS + 40);
+    return removed;
+  }
+  function addCarveFeedback(x, y, removed) {
+    if (removed <= 0) return;
+    brightMarks.push({ x, y, rx: CARVE_RADIUS, ry: CARVE_RADIUS, life: 0.22 });
+    spawnParticles(x, y, Math.min(5, 1 + removed), '#e6bd67');
+  }
+  function beginCarveStroke(point) {
+    carveStroke = createCarveStroke();
+    const removed = recordCarvePoint(point.x, point.y);
+    addCarveFeedback(point.x, point.y, removed);
+  }
   function carveSandAt(x, y) {
     if (pendingClear) return 0;
-    const removed = carveEllipse(x, y, 20, 20);
-    if (removed > 0) {
-      lastSuccessfulCarveAt = performance.now();
-      wakeCigarettesNear(x, y);
-      spawnParticles(x, y, Math.min(8, 2 + removed), '#e6bd67');
-    }
+    const ownStroke = !carveStroke;
+    if (ownStroke) carveStroke = createCarveStroke();
+    const removed = recordCarvePoint(x, y);
+    addCarveFeedback(x, y, removed);
+    if (ownStroke) finishCarveStroke();
     return removed;
   }
   function carveLine(a, b) {
-    if (pendingClear) return;
+    if (pendingClear) return 0;
+    if (!carveStroke) carveStroke = createCarveStroke();
     const dx = b.x - a.x, dy = b.y - a.y;
-    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 9));
-    for (let i = 0; i <= steps; i++) carveSandAt(a.x + dx * i / steps, a.y + dy * i / steps);
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / CARVE_STEP));
+    let removed = 0;
+    let feedbackX = b.x, feedbackY = b.y;
+    for (let i = 1; i <= steps; i++) {
+      const x = a.x + dx * i / steps, y = a.y + dy * i / steps;
+      const pointRemoved = recordCarvePoint(x, y);
+      if (pointRemoved > 0) { removed += pointRemoved; feedbackX = x; feedbackY = y; }
+    }
+    addCarveFeedback(feedbackX, feedbackY, removed);
+    return removed;
+  }
+  function finishCarveStroke() {
+    const stroke = carveStroke;
+    carveStroke = null;
+    if (!stroke || stroke.removed <= 0) return 0;
+    settleSandBounds(stroke.minX, stroke.minY, stroke.maxX, stroke.maxY);
+    wakeCigarettesNear(
+      (stroke.minX + stroke.maxX) / 2,
+      (stroke.minY + stroke.maxY) / 2,
+      Math.hypot(stroke.maxX - stroke.minX, stroke.maxY - stroke.minY) / 2 + CARVE_RADIUS
+    );
+    return stroke.removed;
   }
   function solidAt(px, py) {
     if (px < 0 || py < 0 || px >= WORLD_W || py >= WORLD_H) return true;
@@ -903,7 +960,7 @@
     if (delivered + active.length < NEED) { finishGame('fail', 'insufficient_remaining'); return true; }
     if (active.every(c => c.y - c.r > goal.y + goal.h + 80)) { finishGame(delivered >= NEED ? 'clear' : 'fail', 'below_goal'); return true; }
     const allStuckArmed = active.every(c => c.stuckTimer * 1000 >= STUCK_ARM_MS);
-    if (allStuckArmed && nowPerf - lastMeaningfulMotionAt >= NO_PROGRESS_END_MS && nowPerf - lastSuccessfulCarveAt >= NO_PROGRESS_END_MS) {
+    if (allStuckArmed && performance.now() - lastMeaningfulMotionAt >= NO_PROGRESS_END_MS && performance.now() - lastSuccessfulCarveAt >= NO_PROGRESS_END_MS) {
       finishGame('fail', 'stalled'); return true;
     }
     return false;
@@ -985,7 +1042,7 @@
     const goalY = trackTop + ((goal.y + goal.h / 2) / WORLD_H) * trackHeight; ctx.font = '14px serif'; ctx.fillStyle = '#65d694'; ctx.strokeStyle = '#164b32'; ctx.lineWidth = 2;
     ctx.strokeText('🦊', SCROLLBAR_W / 2, goalY + 5); ctx.fillText('🦊', SCROLLBAR_W / 2, goalY + 5);
     const active = cigarettes.filter(c => c.active);
-    if (active.length) { const avgY = active.reduce((sum, c) => sum + c.y, 0) / active.length; const cigY = trackTop + avgY / WORLD_H * trackHeight; ctx.fillStyle = '#fff8e5'; ctx.beginPath(); ctx.arc(SCROLLBAR_W / 2, cigY, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#2a1f2d'; ctx.lineWidth = 2; ctx.stroke(); }
+    if (active.length) { const avgY = active.reduce((sum, c) => sum + c.y, 0) / active.length; const cigY = trackTop + (avgY / WORLD_H) * trackHeight; ctx.fillStyle = '#fff8e5'; ctx.beginPath(); ctx.arc(SCROLLBAR_W / 2, cigY, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#2a1f2d'; ctx.lineWidth = 2; ctx.stroke(); }
     ctx.textAlign = 'start'; ctx.restore();
   }
   function roundRect(x, y, w, h, r, fill, stroke = false) {
