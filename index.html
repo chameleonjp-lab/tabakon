@@ -60,7 +60,7 @@
 (() => {
   'use strict';
 
-  // 1. 定数
+  // 1. 固定契約と物理定数
   const GAME_SLUG = 'tabakon';
   const PUBLIC_URL = 'https://chameleonjp.codeberg.page/tabakon/';
   const OTHER_GAMES_URL = 'https://chameleonjp.codeberg.page/chameleonjp_lab/';
@@ -79,22 +79,36 @@
   const MAX_PARTICLES = 100;
   const STATES = { HOME: 'HOME', RULE: 'RULE', READY: 'READY', PLAYING: 'PLAYING', RESULT: 'RESULT', ERROR: 'ERROR' };
   const TYPES = {
-    normal: { score: 1000, ring: '#f8f0da', fill: '#fff8e5', gravity: 900, bounce: 0.22, roll: 0.985, barKick: 1.0, nearTrap: 0 },
-    red: { score: 1500, ring: '#f04f45', fill: '#ffe3dc', gravity: 1080, bounce: 0.14, roll: 0.93, barKick: 0.75, nearTrap: 0 },
-    blue: { score: 1300, ring: '#3295ff', fill: '#e2f2ff', gravity: 820, bounce: 0.42, roll: 1.015, barKick: 1.45, nearTrap: 0 },
-    black: { score: 1700, ring: '#161018', fill: '#e3dbe8', gravity: 930, bounce: 0.20, roll: 0.98, barKick: 1.15, nearTrap: 12 }
+    normal: { score: 1000, ring: '#f8f0da', fill: '#fff8e5', gravity: 900, bounce: 0.22, roll: 0.985, barKick: 1.0, nearTrap: 0, mass: 1.00 },
+    red: { score: 1500, ring: '#f04f45', fill: '#ffe3dc', gravity: 1080, bounce: 0.14, roll: 0.93, barKick: 0.75, nearTrap: 0, mass: 1.25 },
+    blue: { score: 1300, ring: '#3295ff', fill: '#e2f2ff', gravity: 820, bounce: 0.42, roll: 1.015, barKick: 1.45, nearTrap: 0, mass: 0.80 },
+    black: { score: 1700, ring: '#161018', fill: '#e3dbe8', gravity: 930, bounce: 0.20, roll: 0.98, barKick: 1.15, nearTrap: 12, mass: 1.10 }
   };
   const BAD_COMMENT = 'ｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀﾈｯﾄﾔﾒﾛｲﾝﾀｰﾈｯﾄﾊｱｸﾀﾞｲﾝﾀｰﾈｯﾄﾊﾊﾞｶﾆﾅﾙｲﾝﾀｰﾈｯﾄﾊﾉｳｦｵｾﾝｽﾙｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀ...';
   const STUCK_ARM_MS = 2000;
   const NO_PROGRESS_END_MS = 8000;
   const MEANINGFUL_MOVE_PX = 0.5;
   const MEANINGFUL_SPEED_PX = 10;
+  const PHYSICS_DT = 1 / 120;
+  const MAX_PHYSICS_STEPS = 6;
+  const MAX_ACCUMULATED_TIME = PHYSICS_DT * MAX_PHYSICS_STEPS;
+  const BALL_RADIUS = 8;
+  const BALL_DRAW_RADIUS = 9;
+  const BALL_SHADOW_RADIUS = 10;
+  const BALL_COLLISION_ITERATIONS = 2;
+  const BALL_OVERLAP_SLOP = 0.1;
+  const BALL_POSITION_CORRECTION = 0.8;
+  const BALL_MAX_SPEED = 900;
+  const SLEEP_SPEED = 3;
+  const SLEEP_DELAY = 0.6;
+  const WAKE_IMPULSE = 12;
+  const ROTOR_CONTACT_COOLDOWN = 0.05;
 
   // 2. Supabase設定
   const SUPABASE_URL = 'https://mlpnjgezrnhdxsxolyzj.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_drzcy0v97knU6FgjqSgBHw_0A9XPdFM';
 
-  // 3. DOM取得
+  // 3. DOM・論理座標
   const $ = id => document.getElementById(id);
   const screens = { HOME: $('homeScreen'), RULE: $('ruleScreen'), READY: $('gameScreen'), PLAYING: $('gameScreen'), RESULT: $('resultScreen'), ERROR: $('errorScreen') };
   const canvas = $('gameCanvas');
@@ -117,8 +131,9 @@
   const gy = cellY => cellY * CELL_H;
   const cellCenterX = cellX => cellX * CELL_W + CELL_W / 2;
   const cellCenterY = cellY => cellY * CELL_H + CELL_H / 2;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-  // 4. ステージ定義（10種類から開始ごとにランダム選択）
+  // 4. ステージ定義（配置はPR3で変更しない）
   const COMMON_WALLS = [
     { kind: 'wall', x: 0, y: 0, w: 2, h: 144 },
     { kind: 'wall', x: 46, y: 0, w: 2, h: 144 },
@@ -179,15 +194,9 @@
     makeStage('ステージ10：総合', '総合', 10)
   ];
 
-  function rectToWorld(rect) {
-    return { x: gx(rect.x), y: gy(rect.y), w: rect.w * CELL_W, h: rect.h * CELL_H };
-  }
-  function overlapWidth(a, b) {
-    return Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
-  }
-  function overlaps(a, b) {
-    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-  }
+  function rectToWorld(rect) { return { x: gx(rect.x), y: gy(rect.y), w: rect.w * CELL_W, h: rect.h * CELL_H }; }
+  function overlapWidth(a, b) { return Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)); }
+  function overlaps(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
   function validateStageGoalAccess(stage) {
     const goalRect = stage.goal;
     const dangerZone = { x: goalRect.x - 8, y: goalRect.y - 140, w: goalRect.w + 16, h: 150 };
@@ -196,40 +205,19 @@
       if (rect.kind !== 'wall') continue;
       const worldRect = rectToWorld(rect);
       const overlap = overlapWidth(worldRect, goalRect);
-      if (
-        overlaps(worldRect, dangerZone) &&
-        worldRect.w >= 60 &&
-        worldRect.h <= 20 &&
-        overlap >= goalRect.w * 0.45
-      ) {
-        warnings.push('ゴール直上を塞ぐ横長固定壁の可能性: ' + stage.name);
-      }
+      if (overlaps(worldRect, dangerZone) && worldRect.w >= 60 && worldRect.h <= 20 && overlap >= goalRect.w * 0.45) warnings.push('ゴール直上を塞ぐ横長固定壁の可能性: ' + stage.name);
     }
     for (const m of stage.mechanisms) {
-      if (m.kind === 'bar') {
-        const barRect = { x: m.x, y: m.y, w: m.w, h: m.h };
-        const overlap = overlapWidth(barRect, goalRect);
-        if (
-          overlaps(barRect, dangerZone) &&
-          m.w >= 70 &&
-          m.h <= 16 &&
-          overlap >= goalRect.w * 0.35
-        ) {
-          warnings.push('ゴール直上を塞ぐ横長バーの可能性: ' + stage.name);
-        }
-      }
-      if (m.kind === 'gate' && m.w > m.h) {
-        const gateRect = { x: m.x, y: m.y, w: m.w, h: m.h };
-        if (overlaps(gateRect, dangerZone)) warnings.push('ゴール直上の横向きゲートの可能性: ' + stage.name);
-      }
+      const hitRect = { x: m.x, y: m.y, w: m.w || 0, h: m.h || 0 };
+      if (m.kind === 'bar' && overlaps(hitRect, dangerZone) && m.w >= 70 && m.h <= 16 && overlapWidth(hitRect, goalRect) >= goalRect.w * 0.35) warnings.push('ゴール直上を塞ぐ横長バーの可能性: ' + stage.name);
+      if (m.kind === 'gate' && m.w > m.h && overlaps(hitRect, dangerZone)) warnings.push('ゴール直上の横向きゲートの可能性: ' + stage.name);
     }
     return warnings;
   }
   function validateAllStages() {
-    const allWarnings = [];
-    for (const stage of STAGES) allWarnings.push(...validateStageGoalAccess(stage));
-    if (allWarnings.length) console.warn('[tabakon] stage goal access warnings', allWarnings);
-    return allWarnings;
+    const warnings = STAGES.flatMap(validateStageGoalAccess);
+    if (warnings.length) console.warn('[tabakon] stage goal access warnings', warnings);
+    return warnings;
   }
   validateAllStages();
 
@@ -251,8 +239,8 @@
   let playDeadlineWallMs = 0;
   let clearRemainingMs = null;
   let lastTs = 0;
+  let physicsAccumulator = 0;
   let rafId = 0;
-  let rankingSubmitted = false;
   let resultFinalized = false;
   let playSequence = 0;
   let currentPlayId = 0;
@@ -270,6 +258,7 @@
   let lostFlash = 0;
   let successFlash = 0;
   let pendingClear = false;
+  let readyTimer = 0;
 
   function setState(next) {
     state = next;
@@ -278,22 +267,18 @@
     if (next !== STATES.PLAYING) { inputMode = INPUT_MODE.NONE; lastPoint = null; }
   }
 
-  // 6. 入力処理
+  // 6. 入力
   function canvasPoint(e) {
     const rect = canvas.getBoundingClientRect();
     const t = e.touches ? e.touches[0] : e;
     return {
-      x: Math.max(0, Math.min(VIEW_W, (t.clientX - rect.left) * VIEW_W / rect.width)),
-      y: Math.max(0, Math.min(VIEW_H, (t.clientY - rect.top) * VIEW_H / rect.height))
+      x: clamp((t.clientX - rect.left) * VIEW_W / rect.width, 0, VIEW_W),
+      y: clamp((t.clientY - rect.top) * VIEW_H / rect.height, 0, VIEW_H)
     };
   }
-  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   function clampCameraY(value) { return clamp(value, 0, WORLD_H - VIEW_H); }
   function screenToWorld(p) { return { x: p.x, y: p.y + cameraY }; }
-  function updateCameraFromScrollbar(screenY) {
-    const ratio = clamp(screenY / VIEW_H, 0, 1);
-    cameraY = clampCameraY(ratio * (WORLD_H - VIEW_H));
-  }
+  function updateCameraFromScrollbar(screenY) { cameraY = clampCameraY(clamp(screenY / VIEW_H, 0, 1) * (WORLD_H - VIEW_H)); }
   function beginInput(e) {
     e.preventDefault();
     const p = canvasPoint(e);
@@ -326,11 +311,7 @@
 
   // 7. ステージ構築
   function fillRectCells(x, y, w, h, value) {
-    for (let yy = y; yy < y + h; yy++) {
-      for (let xx = x; xx < x + w; xx++) {
-        if (xx >= 0 && yy >= 0 && xx < GRID_W && yy < GRID_H) grid[idx(xx, yy)] = value;
-      }
-    }
+    for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) if (xx >= 0 && yy >= 0 && xx < GRID_W && yy < GRID_H) grid[idx(xx, yy)] = value;
   }
   function cellAt(px, py) { return { x: Math.floor(px / CELL_W), y: Math.floor(py / CELL_H) }; }
   function buildStage() {
@@ -339,53 +320,31 @@
     for (const rect of currentStage.rects) fillRectCells(rect.x, rect.y, rect.w, rect.h, rect.kind === 'wall' ? 2 : 1);
     for (const carve of currentStage.carves) carveEllipse(cellCenterX(carve.x), cellCenterY(carve.y), carve.rx, carve.ry, true);
     traps = currentStage.traps.map(t => ({ ...t }));
-    mechanisms = currentStage.mechanisms.map(m => ({ ...m }));
+    mechanisms = currentStage.mechanisms.map((m, index) => ({ ...m, id: 'mechanism-' + index }));
     goal = { ...currentStage.goal };
   }
 
-  // 8. ゲーム初期化
+  // 8. 初期化・時計
+  function spawnPosition(i) {
+    const cluster = SPAWN_CLUSTERS[Math.floor(i / 10)];
+    return { x: cluster.x + ((i % 5) - 2) * 17, y: cluster.y + Math.floor((i % 10) / 5) * 17 };
+  }
   function resetGame() {
-    delivered = 0;
-    lost = 0;
-    deliveredScore = 0;
-    remainingMs = LIMIT_MS;
-    playDeadlinePerfMs = 0;
-    playDeadlineWallMs = 0;
-    clearRemainingMs = null;
-    rankingSubmitted = false;
-    resultFinalized = false;
-    activeResultRequestId = 0;
-    lastSuccessfulCarveAt = 0;
-    lastMeaningfulMotionAt = 0;
-    resultData = null;
-    particles.length = 0;
-    brightMarks.length = 0;
-    deliveredFlash = 0;
-    lostFlash = 0;
-    successFlash = 0;
-    pendingClear = false;
-    cameraY = 0;
+    delivered = 0; lost = 0; deliveredScore = 0; remainingMs = LIMIT_MS;
+    playDeadlinePerfMs = 0; playDeadlineWallMs = 0; clearRemainingMs = null;
+    resultFinalized = false; activeResultRequestId = 0; lastSuccessfulCarveAt = 0; lastMeaningfulMotionAt = 0;
+    resultData = null; particles.length = 0; brightMarks.length = 0;
+    deliveredFlash = 0; lostFlash = 0; successFlash = 0; pendingClear = false; cameraY = 0; physicsAccumulator = 0;
     buildStage();
     cigarettes = [];
     const typePlan = ['normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','red','blue','normal','red','blue','normal','red','blue','normal','black','normal','red','blue','normal','red','blue','normal','black','normal','black'];
     for (let i = 0; i < TOTAL; i++) {
+      const p = spawnPosition(i);
       cigarettes.push({
-        x: SPAWN_CLUSTERS[Math.floor(i / 10)].x + ((i % 5) - 2) * 9,
-        y: SPAWN_CLUSTERS[Math.floor(i / 10)].y + Math.floor((i % 10) / 5) * 14,
-        vx: (i % 5 - 2) * 5,
-        vy: 0,
-        r: 7,
-        type: typePlan[i],
-        active: true,
-        delivered: false,
-        lost: false,
-        angle: 0,
-        squash: 0,
-        sink: 0,
-        bottomTimer: 0,
-        stuckTimer: 0,
-        lastX: SPAWN_CLUSTERS[Math.floor(i / 10)].x + ((i % 5) - 2) * 9,
-        lastY: SPAWN_CLUSTERS[Math.floor(i / 10)].y + Math.floor((i % 10) / 5) * 14
+        id: i, x: p.x, y: p.y, vx: (i % 5 - 2) * 5, vy: 0, r: BALL_RADIUS, type: typePlan[i],
+        active: true, delivered: false, lost: false, angle: 0, squash: 0, sink: 0, bottomTimer: 0,
+        stuckTimer: 0, lastX: p.x, lastY: p.y, grounded: false, sleeping: false, sleepTimer: 0,
+        barContactId: null, barContactTime: 0, rotorContactCooldown: 0
       });
     }
     updateHud(true);
@@ -393,20 +352,19 @@
   }
   function showError(message, error) { console.error(message, error); $('errorText').textContent = message; setState(STATES.ERROR); }
   function beginReadySequence() {
+    if (readyTimer) clearInterval(readyTimer);
     resetGame();
     setState(STATES.READY);
-    console.log('[tabakon] ready countdown start');
     $('countdown').style.display = 'flex';
     let n = 3;
     $('countdown').textContent = n;
-    const timer = setInterval(() => {
+    readyTimer = setInterval(() => {
       n--;
       if (n > 0) $('countdown').textContent = n;
-      else { clearInterval(timer); $('countdown').style.display = 'none'; startGame(); }
+      else { clearInterval(readyTimer); readyTimer = 0; $('countdown').style.display = 'none'; startGame(); }
     }, 850);
   }
   function startReadyCountdown() {
-    console.log('[tabakon] start clicked');
     const name = $('playerName').value.trim();
     if (!name) { $('nameError').textContent = '名前を入力すると開始できます。'; return; }
     try {
@@ -426,13 +384,10 @@
   }
   function syncRemainingTime(nowPerf = performance.now(), nowWall = Date.now()) {
     if (!playDeadlinePerfMs || !playDeadlineWallMs) return remainingMs;
-    const perfRemaining = playDeadlinePerfMs - nowPerf;
-    const wallRemaining = playDeadlineWallMs - nowWall;
-    remainingMs = Math.max(0, Math.min(perfRemaining, wallRemaining));
+    remainingMs = Math.max(0, Math.min(playDeadlinePerfMs - nowPerf, playDeadlineWallMs - nowWall));
     return remainingMs;
   }
   function startGame() {
-    console.log('[tabakon] playing start');
     currentPlayId = ++playSequence;
     activeResultRequestId = 0;
     startSessionClock();
@@ -440,27 +395,20 @@
     lastSuccessfulCarveAt = nowPerf;
     lastMeaningfulMotionAt = nowPerf;
     lastTs = nowPerf;
+    physicsAccumulator = 0;
     setState(STATES.PLAYING);
     ensureLoop();
   }
 
-  // 9. 砂削り処理
+  // 9. 砂削り
   function carveEllipse(cx, cy, rx, ry, silent = false) {
-    const minX = Math.floor((cx - rx) / CELL_W);
-    const maxX = Math.ceil((cx + rx) / CELL_W);
-    const minY = Math.floor((cy - ry) / CELL_H);
-    const maxY = Math.ceil((cy + ry) / CELL_H);
+    const minX = Math.floor((cx - rx) / CELL_W), maxX = Math.ceil((cx + rx) / CELL_W);
+    const minY = Math.floor((cy - ry) / CELL_H), maxY = Math.ceil((cy + ry) / CELL_H);
     let removed = 0;
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) continue;
-        const px = cellCenterX(x);
-        const py = cellCenterY(y);
-        if (((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2 <= 1 && grid[idx(x, y)] === 1) {
-          grid[idx(x, y)] = 0;
-          removed++;
-        }
-      }
+    for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
+      if (x < 0 || y < 0 || x >= GRID_W || y >= GRID_H) continue;
+      const px = cellCenterX(x), py = cellCenterY(y);
+      if (((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2 <= 1 && grid[idx(x, y)] === 1) { grid[idx(x, y)] = 0; removed++; }
     }
     if (!silent && removed > 0) {
       settleSandAround(cx, cy, Math.max(rx, ry) + 10);
@@ -468,7 +416,6 @@
     }
     return removed;
   }
-
   function settleSandAround(cx, cy, radius) {
     const minX = Math.max(1, Math.floor((cx - radius) / CELL_W));
     const maxX = Math.min(GRID_W - 2, Math.ceil((cx + radius) / CELL_W));
@@ -477,67 +424,315 @@
     const passes = Math.min(24, (maxY - minY + 1) * 2);
     for (let p = 0; p < passes; p++) {
       let moved = false;
-      for (let y = maxY - 1; y >= minY; y--) {
-        for (let x = minX; x <= maxX; x++) {
-          if (grid[idx(x, y)] !== 1) continue;
-          let tx = x;
-          if (grid[idx(x, y + 1)] !== 0) {
-            // 真下が埋まっているときは安息角で斜め下へ崩す（垂直スパイクを残さない）
-            const dl = x > minX && grid[idx(x - 1, y)] === 0 && grid[idx(x - 1, y + 1)] === 0;
-            const dr = x < maxX && grid[idx(x + 1, y)] === 0 && grid[idx(x + 1, y + 1)] === 0;
-            if (!dl && !dr) continue;
-            tx = (dl && dr) ? (Math.random() < 0.5 ? x - 1 : x + 1) : (dl ? x - 1 : x + 1);
-          }
-          grid[idx(x, y)] = 0;
-          grid[idx(tx, y + 1)] = 1;
-          moved = true;
-          if (Math.random() < 0.03 && particles.length < MAX_PARTICLES) {
-            particles.push({ x: cellCenterX(tx), y: cellCenterY(y + 1), vx: (Math.random() - 0.5) * 22, vy: 30 + Math.random() * 45, life: 0.28, color: '#cf9f4e' });
-          }
+      for (let y = maxY - 1; y >= minY; y--) for (let x = minX; x <= maxX; x++) {
+        if (grid[idx(x, y)] !== 1) continue;
+        let tx = x;
+        if (grid[idx(x, y + 1)] !== 0) {
+          const dl = x > minX && grid[idx(x - 1, y)] === 0 && grid[idx(x - 1, y + 1)] === 0;
+          const dr = x < maxX && grid[idx(x + 1, y)] === 0 && grid[idx(x + 1, y + 1)] === 0;
+          if (!dl && !dr) continue;
+          tx = (dl && dr) ? (Math.random() < 0.5 ? x - 1 : x + 1) : (dl ? x - 1 : x + 1);
         }
+        grid[idx(x, y)] = 0;
+        grid[idx(tx, y + 1)] = 1;
+        moved = true;
+        if (Math.random() < 0.03 && particles.length < MAX_PARTICLES) particles.push({ x: cellCenterX(tx), y: cellCenterY(y + 1), vx: (Math.random() - 0.5) * 22, vy: 30 + Math.random() * 45, life: 0.28, color: '#cf9f4e' });
       }
       if (!moved) break;
     }
+  }
+  function wakeCigarette(cig) { cig.sleeping = false; cig.sleepTimer = 0; }
+  function wakeCigarettesNear(x, y, radius = 56) {
+    const rr = radius * radius;
+    for (const cig of cigarettes) if (cig.active && (cig.x - x) ** 2 + (cig.y - y) ** 2 <= rr) wakeCigarette(cig);
   }
   function carveSandAt(x, y) {
     if (pendingClear) return 0;
     const removed = carveEllipse(x, y, 20, 20);
     if (removed > 0) {
       lastSuccessfulCarveAt = performance.now();
+      wakeCigarettesNear(x, y);
       spawnParticles(x, y, Math.min(8, 2 + removed), '#e6bd67');
     }
     return removed;
   }
   function carveLine(a, b) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 9));
     if (pendingClear) return;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 9));
     for (let i = 0; i <= steps; i++) carveSandAt(a.x + dx * i / steps, a.y + dy * i / steps);
   }
   function solidAt(px, py) {
     if (px < 0 || py < 0 || px >= WORLD_W || py >= WORLD_H) return true;
     const c = cellAt(px, py);
-    const v = grid[idx(c.x, c.y)];
-    return v === 1 || v === 2;
+    const value = grid[idx(c.x, c.y)];
+    return value === 1 || value === 2;
   }
 
-  // 10. 🚬の移動処理
+  // 10. ボール物理
+  function circleIntersectsRect(c, rect, extra = 0) {
+    const nx = clamp(c.x, rect.x, rect.x + rect.w);
+    const ny = clamp(c.y, rect.y, rect.y + rect.h);
+    return (c.x - nx) ** 2 + (c.y - ny) ** 2 < (c.r + extra) ** 2;
+  }
+  function terrainOverlapAt(cx, cy, radius) {
+    const minX = clamp(Math.floor((cx - radius) / CELL_W), 0, GRID_W - 1);
+    const maxX = clamp(Math.floor((cx + radius) / CELL_W), 0, GRID_W - 1);
+    const minY = clamp(Math.floor((cy - radius) / CELL_H), 0, GRID_H - 1);
+    const maxY = clamp(Math.floor((cy + radius) / CELL_H), 0, GRID_H - 1);
+    for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
+      const value = grid[idx(x, y)];
+      if (value !== 1 && value !== 2) continue;
+      const rx = gx(x), ry = gy(y);
+      const nx = clamp(cx, rx, rx + CELL_W), ny = clamp(cy, ry, ry + CELL_H);
+      if ((cx - nx) ** 2 + (cy - ny) ** 2 < radius ** 2) return true;
+    }
+    return false;
+  }
+  function findDeepestTerrainOverlap(cig) {
+    const minX = clamp(Math.floor((cig.x - cig.r) / CELL_W), 0, GRID_W - 1);
+    const maxX = clamp(Math.floor((cig.x + cig.r) / CELL_W), 0, GRID_W - 1);
+    const minY = clamp(Math.floor((cig.y - cig.r) / CELL_H), 0, GRID_H - 1);
+    const maxY = clamp(Math.floor((cig.y + cig.r) / CELL_H), 0, GRID_H - 1);
+    let best = null;
+    for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
+      const value = grid[idx(x, y)];
+      if (value !== 1 && value !== 2) continue;
+      const rx = gx(x), ry = gy(y), rw = CELL_W, rh = CELL_H;
+      const nx = clamp(cig.x, rx, rx + rw), ny = clamp(cig.y, ry, ry + rh);
+      let dx = cig.x - nx, dy = cig.y - ny;
+      let distance = Math.hypot(dx, dy);
+      let normalX, normalY, penetration;
+      if (distance > 1e-6) {
+        normalX = dx / distance; normalY = dy / distance; penetration = cig.r - distance;
+      } else {
+        const choices = [
+          { d: Math.abs(cig.x - rx), nx: -1, ny: 0 },
+          { d: Math.abs(rx + rw - cig.x), nx: 1, ny: 0 },
+          { d: Math.abs(cig.y - ry), nx: 0, ny: -1 },
+          { d: Math.abs(ry + rh - cig.y), nx: 0, ny: 1 }
+        ].sort((a, b) => a.d - b.d);
+        normalX = choices[0].nx; normalY = choices[0].ny; penetration = cig.r + choices[0].d;
+      }
+      if (penetration > 0 && (!best || penetration > best.penetration)) best = { normalX, normalY, penetration };
+    }
+    return best;
+  }
+  function clampBallSpeed(cig) {
+    const speed = Math.hypot(cig.vx, cig.vy);
+    if (speed > BALL_MAX_SPEED) { const scale = BALL_MAX_SPEED / speed; cig.vx *= scale; cig.vy *= scale; }
+  }
+  function resolveWorldBounds(cig) {
+    if (cig.x < cig.r) { cig.x = cig.r; cig.vx = Math.abs(cig.vx) * 0.35; }
+    if (cig.x > WORLD_W - cig.r) { cig.x = WORLD_W - cig.r; cig.vx = -Math.abs(cig.vx) * 0.35; }
+    if (cig.y < cig.r) { cig.y = cig.r; cig.vy = Math.abs(cig.vy) * 0.2; }
+  }
+  function resolveTerrainCollisions(cig, cfg) {
+    let grounded = false;
+    for (let pass = 0; pass < 6; pass++) {
+      const hit = findDeepestTerrainOverlap(cig);
+      if (!hit) break;
+      cig.x += hit.normalX * (hit.penetration + 0.02);
+      cig.y += hit.normalY * (hit.penetration + 0.02);
+      const normalVelocity = cig.vx * hit.normalX + cig.vy * hit.normalY;
+      if (normalVelocity < 0) {
+        const impact = Math.abs(normalVelocity);
+        const restitution = hit.normalY < -0.45 ? cfg.bounce : Math.min(cfg.bounce, 0.12);
+        const impulse = -(1 + restitution) * normalVelocity;
+        cig.vx += impulse * hit.normalX;
+        cig.vy += impulse * hit.normalY;
+        if (hit.normalY < -0.45 && impact > 220) cig.squash = Math.min(0.22, impact / 2200);
+      }
+      if (hit.normalY < -0.45) grounded = true;
+    }
+    return grounded;
+  }
+  function applySlopeRoll(cig, cfg, dt) {
+    const probeY = cig.y + cig.r + 3;
+    const belowLeft = solidAt(cig.x - cig.r * 0.7, probeY);
+    const belowRight = solidAt(cig.x + cig.r * 0.7, probeY);
+    if (!belowLeft && !belowRight) {
+      if (Math.abs(cig.vx) < 6) cig.vx += (goal.x + goal.w / 2 > cig.x ? 1 : -1) * cfg.gravity * 0.1 * dt;
+      return;
+    }
+    if (belowLeft === belowRight) return;
+    cig.vx += (belowRight ? -1 : 1) * cfg.gravity * 0.6 * dt;
+  }
+  function closestPointOnRotor(cig, rotor) {
+    const ux = Math.cos(rotor.angle), uy = Math.sin(rotor.angle);
+    const along = clamp((cig.x - rotor.x) * ux + (cig.y - rotor.y) * uy, -rotor.len / 2, rotor.len / 2);
+    return { x: rotor.x + ux * along, y: rotor.y + uy * along, along };
+  }
+  function isMechanismTouching(cig) {
+    for (const m of mechanisms) {
+      if ((m.kind === 'bar' || (m.kind === 'gate' && !m.open)) && circleIntersectsRect(cig, m, 1)) return true;
+      if (m.kind === 'rotor') { const p = closestPointOnRotor(cig, m); if (Math.hypot(cig.x - p.x, cig.y - p.y) < cig.r + 6) return true; }
+    }
+    return false;
+  }
+  function resolveMechanismCollisions(cig, cfg, dt, previousY) {
+    let mechanismContact = false;
+    let barContactThisStep = null;
+    cig.rotorContactCooldown = Math.max(0, cig.rotorContactCooldown - dt);
+    for (const m of mechanisms) {
+      if (m.kind === 'bar' && circleIntersectsRect(cig, m)) {
+        mechanismContact = true; barContactThisStep = m.id; wakeCigarette(cig);
+        const fromTop = previousY + cig.r <= m.y + 3 || cig.y < m.y + m.h / 2;
+        if (fromTop) {
+          const impact = Math.max(0, cig.vy);
+          cig.y = m.y - cig.r - 0.02;
+          if (cig.barContactId !== m.id && impact > 40) {
+            cig.vy = -impact * Math.min(cfg.bounce, 0.25);
+            if (impact > 220) cig.squash = Math.min(0.22, impact / 2200);
+          } else if (cig.vy > 0) cig.vy = 0;
+          const targetVx = m.speed * m.dir;
+          cig.vx += (targetVx - cig.vx) * Math.min(1, 10 * dt) * 0.5 * cfg.barKick;
+        } else {
+          const nx = cig.x < m.x + m.w / 2 ? -1 : 1;
+          cig.x = nx < 0 ? m.x - cig.r - 0.02 : m.x + m.w + cig.r + 0.02;
+          if (cig.vx * nx < 0) cig.vx *= -0.35;
+        }
+      } else if (m.kind === 'gate' && !m.open && circleIntersectsRect(cig, m)) {
+        mechanismContact = true; wakeCigarette(cig);
+        const leftPen = Math.abs(cig.x + cig.r - m.x), rightPen = Math.abs(m.x + m.w - (cig.x - cig.r));
+        if (leftPen < rightPen) { cig.x = m.x - cig.r - 0.02; cig.vx = -Math.abs(cig.vx) * 0.35; }
+        else { cig.x = m.x + m.w + cig.r + 0.02; cig.vx = Math.abs(cig.vx) * 0.35; }
+      } else if (m.kind === 'rotor') {
+        const point = closestPointOnRotor(cig, m);
+        let dx = cig.x - point.x, dy = cig.y - point.y;
+        let distance = Math.hypot(dx, dy);
+        if (distance < cig.r + 5) {
+          mechanismContact = true; wakeCigarette(cig);
+          if (distance < 1e-6) { dx = -Math.sin(m.angle); dy = Math.cos(m.angle); distance = 1; }
+          const nx = dx / distance, ny = dy / distance;
+          const penetration = cig.r + 5 - distance;
+          cig.x += nx * (penetration + 0.02); cig.y += ny * (penetration + 0.02);
+          if (cig.rotorContactCooldown <= 0) {
+            const response = cig.type === 'blue' ? 1.6 : cig.type === 'black' ? 1.15 : 1.3;
+            const tangentialSpeed = Math.abs(point.along) * Math.abs(m.speed) * response;
+            const sign = Math.sign(m.speed) || 1;
+            cig.vx += -Math.sin(m.angle) * tangentialSpeed * sign + nx * 8;
+            cig.vy += Math.cos(m.angle) * tangentialSpeed * sign + ny * 8;
+            cig.rotorContactCooldown = ROTOR_CONTACT_COOLDOWN;
+          }
+        }
+      }
+    }
+    if (barContactThisStep) {
+      cig.barContactTime = cig.barContactId === barContactThisStep ? cig.barContactTime + dt : 0;
+      cig.barContactId = barContactThisStep;
+    } else {
+      cig.barContactId = null; cig.barContactTime = 0;
+    }
+    return mechanismContact;
+  }
+  function moveCigarette(cig, cfg, dt) {
+    if (cig.sleeping) {
+      const supported = terrainOverlapAt(cig.x, cig.y + 0.75, cig.r) || isMechanismTouching(cig);
+      if (supported) { cig.vx = 0; cig.vy = 0; cig.grounded = true; return false; }
+      wakeCigarette(cig);
+    }
+    cig.vy += cfg.gravity * dt;
+    cig.vx *= Math.pow(cfg.roll, dt * 60);
+    clampBallSpeed(cig);
+    const distance = Math.hypot(cig.vx * dt, cig.vy * dt);
+    const substeps = clamp(Math.ceil(distance / (BALL_RADIUS * 0.5)), 1, 4);
+    const subDt = dt / substeps;
+    let grounded = false, mechanismContact = false;
+    for (let step = 0; step < substeps; step++) {
+      const previousY = cig.y;
+      cig.x += cig.vx * subDt;
+      cig.y += cig.vy * subDt;
+      resolveWorldBounds(cig);
+      grounded = resolveTerrainCollisions(cig, cfg) || grounded;
+      mechanismContact = resolveMechanismCollisions(cig, cfg, subDt, previousY) || mechanismContact;
+      clampBallSpeed(cig);
+      if (!cig.active || pendingClear) break;
+    }
+    if (grounded) {
+      if (Math.abs(cig.vy) < 18) cig.vy = 0;
+      cig.vx *= Math.pow(0.96, dt * 60);
+      applySlopeRoll(cig, cfg, dt);
+    }
+    cig.grounded = grounded;
+    cig.angle += cig.vx * dt / Math.max(1, BALL_RADIUS);
+    if (cig.squash) cig.squash = Math.max(0, cig.squash - dt * 3);
+    return mechanismContact;
+  }
+  function deterministicPairNormal(a, b) {
+    const angle = (((a.id + 1) * 73856093 ^ (b.id + 1) * 19349663) >>> 0) / 4294967296 * Math.PI * 2;
+    return { x: Math.cos(angle), y: Math.sin(angle) };
+  }
+  function resolveBallPair(a, b) {
+    let dx = b.x - a.x, dy = b.y - a.y;
+    let distance = Math.hypot(dx, dy);
+    const minDistance = a.r + b.r;
+    if (distance >= minDistance) return;
+    let nx, ny;
+    if (distance < 1e-6) { const n = deterministicPairNormal(a, b); nx = n.x; ny = n.y; distance = 0; }
+    else { nx = dx / distance; ny = dy / distance; }
+    const cfgA = TYPES[a.type], cfgB = TYPES[b.type];
+    const invMassA = 1 / cfgA.mass, invMassB = 1 / cfgB.mass;
+    const invMassSum = invMassA + invMassB;
+    const overlap = minDistance - distance;
+    const correction = Math.max(0, overlap - BALL_OVERLAP_SLOP) * BALL_POSITION_CORRECTION / invMassSum;
+    a.x -= nx * correction * invMassA; a.y -= ny * correction * invMassA;
+    b.x += nx * correction * invMassB; b.y += ny * correction * invMassB;
+    const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
+    const velocityAlongNormal = rvx * nx + rvy * ny;
+    let impulseMagnitude = 0;
+    if (velocityAlongNormal < 0) {
+      const restitution = Math.min(cfgA.bounce, cfgB.bounce);
+      impulseMagnitude = -(1 + restitution) * velocityAlongNormal / invMassSum;
+      const ix = impulseMagnitude * nx, iy = impulseMagnitude * ny;
+      a.vx -= ix * invMassA; a.vy -= iy * invMassA;
+      b.vx += ix * invMassB; b.vy += iy * invMassB;
+      const txRaw = rvx - velocityAlongNormal * nx, tyRaw = rvy - velocityAlongNormal * ny;
+      const tangentLength = Math.hypot(txRaw, tyRaw);
+      if (tangentLength > 1e-6) {
+        const tx = txRaw / tangentLength, ty = tyRaw / tangentLength;
+        let frictionImpulse = -(rvx * tx + rvy * ty) / invMassSum;
+        const maxFriction = Math.abs(impulseMagnitude) * 0.08;
+        frictionImpulse = clamp(frictionImpulse, -maxFriction, maxFriction);
+        a.vx -= frictionImpulse * tx * invMassA; a.vy -= frictionImpulse * ty * invMassA;
+        b.vx += frictionImpulse * tx * invMassB; b.vy += frictionImpulse * ty * invMassB;
+      }
+    }
+    if (overlap > 0.5 || Math.abs(impulseMagnitude) >= WAKE_IMPULSE) { wakeCigarette(a); wakeCigarette(b); }
+  }
+  function resolveBallCollisions() {
+    const active = cigarettes.filter(c => c.active);
+    for (let iteration = 0; iteration < BALL_COLLISION_ITERATIONS; iteration++) {
+      for (let i = 0; i < active.length; i++) for (let j = i + 1; j < active.length; j++) resolveBallPair(active[i], active[j]);
+    }
+    for (const cig of active) {
+      resolveWorldBounds(cig);
+      resolveTerrainCollisions(cig, TYPES[cig.type]);
+      clampBallSpeed(cig);
+    }
+  }
+  function updateSleepState(cig, dt, mechanismContact) {
+    if (!cig.active) return;
+    const speed = Math.hypot(cig.vx, cig.vy);
+    if (cig.grounded && !mechanismContact && speed < SLEEP_SPEED) {
+      cig.sleepTimer += dt;
+      if (cig.sleepTimer >= SLEEP_DELAY) { cig.sleeping = true; cig.vx = 0; cig.vy = 0; }
+    } else if (!cig.sleeping) cig.sleepTimer = 0;
+  }
   function updateCigarettes(dt) {
+    const contacts = new Map();
     for (const cig of cigarettes) {
       if (state !== STATES.PLAYING || pendingClear) break;
       if (!cig.active) continue;
-      const cfg = TYPES[cig.type];
-      cig.vy += cfg.gravity * dt;
-      cig.vx *= Math.pow(cfg.roll, dt * 60);
-      cig.x += cig.vx * dt;
-      cig.y += cig.vy * dt;
-      resolveCollisions(cig, cfg, dt);
-      cig.angle += cig.vx * dt / 12;
-      if (cig.squash) cig.squash = Math.max(0, cig.squash - dt * 3);
-      checkGoalAndTraps(cig);
+      contacts.set(cig.id, moveCigarette(cig, TYPES[cig.type], dt));
+    }
+    if (!pendingClear) resolveBallCollisions();
+    for (const cig of cigarettes) {
+      if (!cig.active || pendingClear) continue;
+      checkGoalAndTraps(cig, dt);
       checkBottomLost(cig, dt);
       updateStuckState(cig, dt);
+      updateSleepState(cig, dt, contacts.get(cig.id) || false);
     }
   }
 
@@ -546,470 +741,211 @@
     for (const m of mechanisms) {
       if (m.kind === 'bar') {
         m.x += m.speed * m.dir * dt;
-        if (m.x < m.min || m.x + m.w > m.max) {
-          m.dir *= -1;
-          m.x = Math.max(m.min, Math.min(m.x, m.max - m.w));
-        }
+        if (m.x < m.min || m.x + m.w > m.max) { m.dir *= -1; m.x = clamp(m.x, m.min, m.max - m.w); }
       } else if (m.kind === 'gate') {
-        m.t += dt;
-        m.open = Math.sin(m.t * 2.1) > -0.15;
-      } else if (m.kind === 'rotor') {
-        m.angle += m.speed * dt;
-      }
+        m.t += dt; m.open = Math.sin(m.t * 2.1) > -0.15;
+      } else if (m.kind === 'rotor') m.angle += m.speed * dt;
     }
+    for (const cig of cigarettes) if (cig.active && cig.sleeping && isMechanismTouching(cig)) wakeCigarette(cig);
   }
 
-  // 12. 当たり判定
-  function rectHitCircle(rect, c) {
-    const nx = Math.max(rect.x, Math.min(c.x, rect.x + rect.w));
-    const ny = Math.max(rect.y, Math.min(c.y, rect.y + rect.h));
-    return Math.hypot(c.x - nx, c.y - ny) < c.r;
-  }
-  function applySlopeRoll(cig, cfg, dt) {
-    const belowLeftFree = !solidAt(cig.x - cig.r, cig.y + cig.r + 4);
-    const belowRightFree = !solidAt(cig.x + cig.r, cig.y + cig.r + 4);
-    if (belowLeftFree && belowRightFree) {
-      if (Math.abs(cig.vx) < 6) cig.vx += (goal.x + goal.w / 2 > cig.x ? 1 : -1) * cfg.gravity * 0.1 * dt;
+  // 12. ゴール・トラップ・終了判定
+  function checkGoalAndTraps(cig, dt) {
+    if (circleIntersectsRect(cig, goal)) {
+      cig.sink += dt;
+      cig.vx += (goal.x + goal.w / 2 - cig.x) * 4 * dt;
+      cig.vy += (goal.y + goal.h / 2 - cig.y) * 4 * dt;
+      wakeCigarette(cig);
+      if (cig.sink >= 0.05) deliverCig(cig);
       return;
     }
-    if (belowLeftFree === belowRightFree) return;
-    cig.vx += (belowRightFree ? 1 : -1) * cfg.gravity * 0.6 * dt;
-  }
-  function resolveCollisions(cig, cfg, dt) {
-    for (let k = 0; k < 4; k++) {
-      if (solidAt(cig.x, cig.y + cig.r)) { const impact = Math.abs(cig.vy); cig.y -= 2; cig.vy = -impact * cfg.bounce; if (impact > 220) cig.squash = Math.min(0.22, impact / 2200); }
-      if (solidAt(cig.x - cig.r, cig.y)) { cig.x += 2; cig.vx = Math.abs(cig.vx) * 0.55; }
-      if (solidAt(cig.x + cig.r, cig.y)) { cig.x -= 2; cig.vx = -Math.abs(cig.vx) * 0.55; }
-    }
-    const grounded = solidAt(cig.x, cig.y + cig.r + 1);
-    if (grounded) {
-      if (Math.abs(cig.vy) < 18) cig.vy = 0;
-      cig.vx *= 0.96;
-      applySlopeRoll(cig, cfg, dt);
-    }
-    for (const m of mechanisms) {
-      if (m.kind === 'bar' && rectHitCircle(m, cig)) {
-        cig.y = m.y - cig.r - 1;
-        cig.vy = -Math.abs(cig.vy) * (0.18 + cfg.bounce);
-        cig.vx += m.dir * 54 * cfg.barKick;
-      } else if (m.kind === 'gate' && !m.open && rectHitCircle(m, cig)) {
-        cig.x = cig.x < m.x ? m.x - cig.r - 1 : m.x + m.w + cig.r + 1;
-        cig.vx *= -0.45;
-      } else if (m.kind === 'rotor') {
-        const ux = Math.cos(m.angle), uy = Math.sin(m.angle);
-        const along = clamp((cig.x - m.x) * ux + (cig.y - m.y) * uy, -m.len / 2, m.len / 2);
-        const rx = cig.x - (m.x + ux * along), ry = cig.y - (m.y + uy * along);
-        const d = Math.hypot(rx, ry) || 1;
-        if (d < cig.r + 5) {
-          const resp = cig.type === 'blue' ? 1.6 : cig.type === 'black' ? 1.15 : 1.3;
-          const tang = Math.abs(along) * Math.abs(m.speed) * resp;
-          const sgn = Math.sign(m.speed) || 1;
-          cig.vx += Math.cos(m.angle + Math.PI / 2) * tang * sgn + rx / d * 8;
-          cig.vy += Math.sin(m.angle + Math.PI / 2) * tang * sgn + ry / d * 8;
-          cig.x += rx / d * 2;
-          cig.y += ry / d * 2;
-        }
-      }
-    }
-    if (cig.y > WORLD_H + 30) loseCig(cig);
-  }
-  function checkGoalAndTraps(cig) {
-    const inGoal = cig.x > goal.x && cig.x < goal.x + goal.w && cig.y > goal.y && cig.y < goal.y + goal.h;
-    if (inGoal) {
-      cig.sink += 1;
-      cig.vx += (goal.x + goal.w / 2 - cig.x) * 0.035;
-      cig.vy += (goal.y + goal.h / 2 - cig.y) * 0.035;
-      if (cig.sink > 2) deliverCig(cig);
-      return;
-    }
+    cig.sink = 0;
     for (const trap of traps) {
-      const margin = TYPES[cig.type].nearTrap;
-      if (cig.x > trap.x - margin && cig.x < trap.x + trap.w + margin && cig.y > trap.y - margin && cig.y < trap.y + trap.h + margin) {
-        loseCig(cig);
-        return;
-      }
+      if (circleIntersectsRect(cig, trap, TYPES[cig.type].nearTrap)) { loseCig(cig); return; }
     }
   }
-
   function checkBottomLost(cig, dt) {
     if (!cig.active) return;
-    const inGoalX = cig.x > goal.x - 8 && cig.x < goal.x + goal.w + 8;
-    const belowGoal = cig.y > goal.y + goal.h + 40;
-    const nearBottom = cig.y > WORLD_H - 28;
+    const inGoalX = cig.x + cig.r > goal.x - 8 && cig.x - cig.r < goal.x + goal.w + 8;
+    const belowGoal = cig.y - cig.r > goal.y + goal.h + 40;
+    const nearBottom = cig.y + cig.r > WORLD_H - 28;
     if ((nearBottom || belowGoal) && !inGoalX) {
-      cig.bottomTimer = (cig.bottomTimer || 0) + dt;
+      cig.bottomTimer += dt;
       if (cig.bottomTimer >= 0.35) loseCig(cig);
-    } else {
-      cig.bottomTimer = 0;
-    }
+    } else cig.bottomTimer = 0;
+    if (cig.y > WORLD_H + 30) loseCig(cig);
   }
   function updateStuckState(cig, dt) {
     if (!cig.active) return;
-    const dx = cig.x - (cig.lastX ?? cig.x);
-    const dy = cig.y - (cig.lastY ?? cig.y);
-    const moved = Math.hypot(dx, dy);
+    const moved = Math.hypot(cig.x - cig.lastX, cig.y - cig.lastY);
     const speed = Math.hypot(cig.vx, cig.vy);
-    if (moved >= MEANINGFUL_MOVE_PX || speed >= MEANINGFUL_SPEED_PX) {
-      lastMeaningfulMotionAt = performance.now();
-    }
-    if (moved < 0.35 && speed < 8) cig.stuckTimer = (cig.stuckTimer || 0) + dt;
+    if (moved >= MEANINGFUL_MOVE_PX || speed >= MEANINGFUL_SPEED_PX) lastMeaningfulMotionAt = performance.now();
+    if (moved < 0.35 && speed < 8) cig.stuckTimer += dt;
     else cig.stuckTimer = 0;
-    cig.lastX = cig.x;
-    cig.lastY = cig.y;
+    cig.lastX = cig.x; cig.lastY = cig.y;
   }
   function deliverCig(cig) {
     if (!cig.active || pendingClear) return;
-    cig.active = false;
-    cig.delivered = true;
-    delivered++;
-    deliveredScore += TYPES[cig.type].score;
-    deliveredFlash = 0.38;
-    lastMeaningfulMotionAt = performance.now();
+    cig.active = false; cig.delivered = true; delivered++; deliveredScore += TYPES[cig.type].score;
+    deliveredFlash = 0.38; lastMeaningfulMotionAt = performance.now();
     spawnParticles(cig.x, cig.y, 14, '#65d694');
-    if (delivered >= NEED && !pendingClear) {
-      syncRemainingTime();
-      clearRemainingMs = remainingMs;
-      pendingClear = true;
-      successFlash = 0.42;
-    }
+    if (delivered >= NEED) { syncRemainingTime(); clearRemainingMs = remainingMs; pendingClear = true; physicsAccumulator = 0; successFlash = 0.42; }
   }
   function loseCig(cig) {
     if (!cig.active || pendingClear) return;
-    cig.active = false;
-    cig.lost = true;
-    lost++;
-    lostFlash = 0.38;
-    lastMeaningfulMotionAt = performance.now();
+    cig.active = false; cig.lost = true; lost++; lostFlash = 0.38; lastMeaningfulMotionAt = performance.now();
     spawnParticles(cig.x, cig.y, 12, '#2b1730');
   }
-
   function checkAllCigarettesResolved(nowPerf = performance.now()) {
     if (state !== STATES.PLAYING) return true;
     if (pendingClear) return false;
-    if (delivered >= NEED) {
-      finishGame('clear', 'threshold_clear');
-      return true;
-    }
+    if (delivered >= NEED) { finishGame('clear', 'threshold_clear'); return true; }
     const active = cigarettes.filter(c => c.active);
-    if (active.length === 0) {
-      finishGame(delivered >= NEED ? 'clear' : 'fail', 'all_resolved');
-      return true;
-    }
-    if (delivered + active.length < NEED) {
-      finishGame('fail', 'insufficient_remaining');
-      return true;
-    }
-    if (active.every(c => c.y > goal.y + goal.h + 80)) {
-      finishGame(delivered >= NEED ? 'clear' : 'fail', 'below_goal');
-      return true;
-    }
-    const allStuckArmed = active.every(c => ((c.stuckTimer || 0) * 1000) >= STUCK_ARM_MS);
-    const noMotionLongEnough = nowPerf - lastMeaningfulMotionAt >= NO_PROGRESS_END_MS;
-    const noCarveLongEnough = nowPerf - lastSuccessfulCarveAt >= NO_PROGRESS_END_MS;
-    if (allStuckArmed && noMotionLongEnough && noCarveLongEnough) {
-      finishGame('fail', 'stalled');
-      return true;
+    if (active.length === 0) { finishGame(delivered >= NEED ? 'clear' : 'fail', 'all_resolved'); return true; }
+    if (delivered + active.length < NEED) { finishGame('fail', 'insufficient_remaining'); return true; }
+    if (active.every(c => c.y - c.r > goal.y + goal.h + 80)) { finishGame(delivered >= NEED ? 'clear' : 'fail', 'below_goal'); return true; }
+    const allStuckArmed = active.every(c => c.stuckTimer * 1000 >= STUCK_ARM_MS);
+    if (allStuckArmed && nowPerf - lastMeaningfulMotionAt >= NO_PROGRESS_END_MS && nowPerf - lastSuccessfulCarveAt >= NO_PROGRESS_END_MS) {
+      finishGame('fail', 'stalled'); return true;
     }
     return false;
   }
 
   // 13. 描画
+  function isNearView(y, h = 0) { return y + h >= cameraY - 40 && y <= cameraY + VIEW_H + 40; }
   function draw() {
     ctx.clearRect(0, 0, VIEW_W, VIEW_H);
     const sky = ctx.createLinearGradient(0, 0, 0, VIEW_H);
-    sky.addColorStop(0, '#8bd6ff');
-    sky.addColorStop(1, '#e4fff2');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    ctx.save();
-    ctx.translate(0, -cameraY);
-    drawGrid();
-    drawBrightMarks();
-    drawTraps();
-    drawGoal();
-    drawMechanisms();
+    sky.addColorStop(0, '#8bd6ff'); sky.addColorStop(1, '#e4fff2');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.save(); ctx.translate(0, -cameraY);
+    drawGrid(); drawBrightMarks(); drawTraps(); drawGoal(); drawMechanisms();
     for (const cig of cigarettes) if (cig.active && isNearView(cig.y, cig.r * 2)) drawCig(cig);
-    drawParticles();
-    ctx.restore();
-    drawScrollbar();
+    drawParticles(); ctx.restore(); drawScrollbar();
     if (successFlash > 0) drawSuccessFlash();
   }
-  function isNearView(y, h = 0) { return y + h >= cameraY - 40 && y <= cameraY + VIEW_H + 40; }
   function drawGrid() {
     const firstRow = Math.max(0, Math.floor(cameraY / CELL_H) - 1);
     const lastRow = Math.min(GRID_H - 1, Math.ceil((cameraY + VIEW_H) / CELL_H) + 1);
-    for (let y = firstRow; y <= lastRow; y++) {
-      for (let x = 0; x < GRID_W; x++) {
-        const v = grid[idx(x, y)];
-        if (!v) continue;
-        if (v === 1) {
-          ctx.fillStyle = (x + y) % 2 ? '#d9aa56' : '#e0b766';
-          ctx.fillRect(gx(x), gy(y), CELL_W + 0.6, CELL_H + 0.6);
-          ctx.fillStyle = 'rgba(255,238,169,.18)';
-          ctx.fillRect(gx(x) + 1, gy(y) + 1, 2, 2);
-        } else {
-          ctx.fillStyle = '#6d4a2c';
-          ctx.fillRect(gx(x), gy(y), CELL_W + 0.5, CELL_H + 0.5);
-        }
-      }
+    for (let y = firstRow; y <= lastRow; y++) for (let x = 0; x < GRID_W; x++) {
+      const value = grid[idx(x, y)]; if (!value) continue;
+      if (value === 1) {
+        ctx.fillStyle = (x + y) % 2 ? '#d9aa56' : '#e0b766'; ctx.fillRect(gx(x), gy(y), CELL_W + 0.6, CELL_H + 0.6);
+        ctx.fillStyle = 'rgba(255,238,169,.18)'; ctx.fillRect(gx(x) + 1, gy(y) + 1, 2, 2);
+      } else { ctx.fillStyle = '#6d4a2c'; ctx.fillRect(gx(x), gy(y), CELL_W + 0.5, CELL_H + 0.5); }
     }
   }
   function drawBrightMarks() {
     for (const mark of brightMarks) {
       if (!isNearView(mark.y, mark.ry)) continue;
-      ctx.globalAlpha = Math.max(0, mark.life * 2.8);
-      ctx.fillStyle = '#ffe48d';
-      ctx.beginPath();
-      ctx.ellipse(mark.x, mark.y, mark.rx * 0.65, mark.ry * 0.65, 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.globalAlpha = Math.max(0, mark.life * 2.8); ctx.fillStyle = '#ffe48d'; ctx.beginPath();
+      ctx.ellipse(mark.x, mark.y, mark.rx * 0.65, mark.ry * 0.65, 0, 0, Math.PI * 2); ctx.fill();
     }
     ctx.globalAlpha = 1;
   }
   function drawGoal() {
-    ctx.fillStyle = 'rgba(73, 158, 95, .26)';
-    roundRect(goal.x, goal.y, goal.w, goal.h, 12, true);
-    ctx.strokeStyle = '#2f8f68';
-    ctx.lineWidth = 3;
-    roundRect(goal.x + 2, goal.y + 2, goal.w - 4, goal.h - 4, 10, false, true);
-    ctx.font = '36px serif';
-    ctx.fillText('🦊', goal.x + 29, goal.y + 38);
+    ctx.fillStyle = 'rgba(73,158,95,.26)'; roundRect(goal.x, goal.y, goal.w, goal.h, 12, true);
+    ctx.strokeStyle = '#2f8f68'; ctx.lineWidth = 3; roundRect(goal.x + 2, goal.y + 2, goal.w - 4, goal.h - 4, 10, false, true);
+    ctx.font = '36px serif'; ctx.fillText('🦊', goal.x + 29, goal.y + 38);
   }
   function drawCig(cig) {
     const cfg = TYPES[cig.type];
-    ctx.save();
-    ctx.translate(cig.x, cig.y);
-    ctx.fillStyle = 'rgba(43,23,48,.26)';
-    ctx.beginPath();
-    ctx.arc(0, 1.6, 13, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.save();
-    ctx.scale(1 + (cig.squash || 0), 1 - (cig.squash || 0));
-    ctx.fillStyle = cfg.fill;
-    ctx.strokeStyle = cfg.ring;
-    ctx.lineWidth = cig.type === 'black' ? 5 : 4;
-    ctx.beginPath();
-    ctx.arc(0, 0, 12, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-    ctx.rotate(cig.angle);
-    ctx.font = '16px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🚬', 0, 1);
-    ctx.restore();
+    ctx.save(); ctx.translate(cig.x, cig.y);
+    ctx.fillStyle = 'rgba(43,23,48,.26)'; ctx.beginPath(); ctx.arc(0, 1.4, BALL_SHADOW_RADIUS, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.scale(1 + cig.squash, 1 - cig.squash); ctx.fillStyle = cfg.fill; ctx.strokeStyle = cfg.ring;
+    ctx.lineWidth = cig.type === 'black' ? 4 : 3; ctx.beginPath(); ctx.arc(0, 0, BALL_DRAW_RADIUS, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
+    ctx.rotate(cig.angle); ctx.font = '14px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🚬', 0, 1); ctx.restore();
   }
   function drawTraps() {
     for (const t of traps) {
       if (!isNearView(t.y, t.h)) continue;
       const pulse = 0.55 + Math.sin(performance.now() / 180) * 0.12;
       const grad = ctx.createLinearGradient(t.x, t.y, t.x + t.w, t.y + t.h);
-      grad.addColorStop(0, t.type === 'swamp' ? '#120719' : '#23040b');
-      grad.addColorStop(1, t.type === 'swamp' ? '#4b1258' : '#70121c');
-      ctx.fillStyle = grad;
-      roundRect(t.x, t.y, t.w, t.h, 7, true);
-      ctx.strokeStyle = '#ff3333';
-      ctx.lineWidth = 3;
-      roundRect(t.x + 1.5, t.y + 1.5, t.w - 3, t.h - 3, 7, false, true);
-      ctx.fillStyle = 'rgba(255,40,40,' + pulse + ')';
-      roundRect(t.x + 5, t.y + 5, t.w - 10, t.h - 10, 5, true);
-      ctx.fillStyle = '#fff6e8';
-      ctx.font = 'bold 13px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(t.w >= 44 ? '危険' : '×', t.x + t.w / 2, t.y + Math.min(20, t.h - 7));
-      ctx.textAlign = 'start';
+      grad.addColorStop(0, t.type === 'swamp' ? '#120719' : '#23040b'); grad.addColorStop(1, t.type === 'swamp' ? '#4b1258' : '#70121c');
+      ctx.fillStyle = grad; roundRect(t.x, t.y, t.w, t.h, 7, true); ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 3;
+      roundRect(t.x + 1.5, t.y + 1.5, t.w - 3, t.h - 3, 7, false, true); ctx.fillStyle = 'rgba(255,40,40,' + pulse + ')';
+      roundRect(t.x + 5, t.y + 5, t.w - 10, t.h - 10, 5, true); ctx.fillStyle = '#fff6e8'; ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(t.w >= 44 ? '危険' : '×', t.x + t.w / 2, t.y + Math.min(20, t.h - 7)); ctx.textAlign = 'start';
     }
   }
   function drawMechanisms() {
     for (const m of mechanisms) {
       if (!isNearView(m.y || 0, m.h || m.len || 0)) continue;
-      if (m.kind === 'bar') {
-        ctx.fillStyle = '#8d54cf';
-        roundRect(m.x, m.y, m.w, m.h, 5, true);
-      } else if (m.kind === 'gate') {
-        ctx.fillStyle = m.open ? 'rgba(70,190,120,.32)' : '#21537a';
-        roundRect(m.x, m.y, m.w, m.h, 4, true);
-        ctx.fillStyle = '#fff';
-        ctx.font = '10px sans-serif';
-        ctx.fillText(m.open ? '開' : '閉', m.x - 2, m.y - 3);
-      } else if (m.kind === 'rotor') {
-        ctx.save();
-        ctx.translate(m.x, m.y);
-        ctx.rotate(m.angle);
-        ctx.fillStyle = '#cf6d2a';
-        roundRect(-m.len / 2, -5, m.len, 10, 5, true);
-        ctx.fillStyle = '#80330f';
-        ctx.beginPath();
-        ctx.arc(0, 0, 7, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
+      if (m.kind === 'bar') { ctx.fillStyle = '#8d54cf'; roundRect(m.x, m.y, m.w, m.h, 5, true); }
+      else if (m.kind === 'gate') { ctx.fillStyle = m.open ? 'rgba(70,190,120,.32)' : '#21537a'; roundRect(m.x, m.y, m.w, m.h, 4, true); ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif'; ctx.fillText(m.open ? '開' : '閉', m.x - 2, m.y - 3); }
+      else if (m.kind === 'rotor') { ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(m.angle); ctx.fillStyle = '#cf6d2a'; roundRect(-m.len / 2, -5, m.len, 10, 5, true); ctx.fillStyle = '#80330f'; ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
     }
   }
   function drawScrollbar() {
-    const trackTop = 10;
-    const trackHeight = VIEW_H - 20;
-    ctx.save();
-    ctx.fillStyle = 'rgba(42,31,45,.82)';
-    roundRect(2, trackTop, SCROLLBAR_W - 4, trackHeight, 10, true);
-    ctx.strokeStyle = 'rgba(255,255,255,.95)';
-    ctx.lineWidth = 2.5;
-    roundRect(3.5, trackTop + 1.5, SCROLLBAR_W - 7, trackHeight - 3, 9, false, true);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('▲', SCROLLBAR_W / 2, trackTop + 12);
-    ctx.fillText('▼', SCROLLBAR_W / 2, trackTop + trackHeight - 4);
-    ctx.fillStyle = 'rgba(255,244,155,.98)';
-    const thumbH = Math.max(42, trackHeight * VIEW_H / WORLD_H);
-    const thumbY = trackTop + (cameraY / (WORLD_H - VIEW_H)) * (trackHeight - thumbH);
-    roundRect(5, thumbY, SCROLLBAR_W - 10, thumbH, 7, true);
-    ctx.strokeStyle = '#6c4422';
-    ctx.lineWidth = 1.5;
-    roundRect(5, thumbY, SCROLLBAR_W - 10, thumbH, 7, false, true);
-    const goalY = trackTop + ((goal.y + goal.h / 2) / WORLD_H) * trackHeight;
-    ctx.font = '14px serif';
-    ctx.fillStyle = '#65d694';
-    ctx.strokeStyle = '#164b32';
-    ctx.lineWidth = 2;
-    ctx.strokeText('🦊', SCROLLBAR_W / 2, goalY + 5);
-    ctx.fillText('🦊', SCROLLBAR_W / 2, goalY + 5);
+    const trackTop = 10, trackHeight = VIEW_H - 20;
+    ctx.save(); ctx.fillStyle = 'rgba(42,31,45,.82)'; roundRect(2, trackTop, SCROLLBAR_W - 4, trackHeight, 10, true);
+    ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 2.5; roundRect(3.5, trackTop + 1.5, SCROLLBAR_W - 7, trackHeight - 3, 9, false, true);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('▲', SCROLLBAR_W / 2, trackTop + 12); ctx.fillText('▼', SCROLLBAR_W / 2, trackTop + trackHeight - 4);
+    ctx.fillStyle = 'rgba(255,244,155,.98)'; const thumbH = Math.max(42, trackHeight * VIEW_H / WORLD_H);
+    const thumbY = trackTop + (cameraY / (WORLD_H - VIEW_H)) * (trackHeight - thumbH); roundRect(5, thumbY, SCROLLBAR_W - 10, thumbH, 7, true);
+    ctx.strokeStyle = '#6c4422'; ctx.lineWidth = 1.5; roundRect(5, thumbY, SCROLLBAR_W - 10, thumbH, 7, false, true);
+    const goalY = trackTop + ((goal.y + goal.h / 2) / WORLD_H) * trackHeight; ctx.font = '14px serif'; ctx.fillStyle = '#65d694'; ctx.strokeStyle = '#164b32'; ctx.lineWidth = 2;
+    ctx.strokeText('🦊', SCROLLBAR_W / 2, goalY + 5); ctx.fillText('🦊', SCROLLBAR_W / 2, goalY + 5);
     const active = cigarettes.filter(c => c.active);
-    if (active.length) {
-      const avgY = active.reduce((sum, c) => sum + c.y, 0) / active.length;
-      const cigY = trackTop + (avgY / WORLD_H) * trackHeight;
-      ctx.fillStyle = '#fff8e5';
-      ctx.beginPath();
-      ctx.arc(SCROLLBAR_W / 2, cigY, 5.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#2a1f2d';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-    ctx.textAlign = 'start';
-    ctx.restore();
+    if (active.length) { const avgY = active.reduce((sum, c) => sum + c.y, 0) / active.length; const cigY = trackTop + avgY / WORLD_H * trackHeight; ctx.fillStyle = '#fff8e5'; ctx.beginPath(); ctx.arc(SCROLLBAR_W / 2, cigY, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#2a1f2d'; ctx.lineWidth = 2; ctx.stroke(); }
+    ctx.textAlign = 'start'; ctx.restore();
   }
   function roundRect(x, y, w, h, r, fill, stroke = false) {
     const radius = Math.max(0, Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2));
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + w - radius, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-    ctx.lineTo(x + w, y + h - radius);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-    ctx.lineTo(x + radius, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
-    if (fill) ctx.fill();
-    if (stroke) ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + radius, y); ctx.lineTo(x + w - radius, y); ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius); ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h); ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius); ctx.lineTo(x, y + radius); ctx.quadraticCurveTo(x, y, x + radius, y); ctx.closePath();
+    if (fill) ctx.fill(); if (stroke) ctx.stroke();
   }
   function drawSuccessFlash() {
-    ctx.globalAlpha = Math.min(0.5, successFlash * 1.4);
-    ctx.fillStyle = '#fff7a8';
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#237b64';
-    ctx.font = 'bold 34px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('成功！', VIEW_W / 2, 245);
-    ctx.textAlign = 'start';
+    ctx.globalAlpha = Math.min(0.5, successFlash * 1.4); ctx.fillStyle = '#fff7a8'; ctx.fillRect(0, 0, VIEW_W, VIEW_H); ctx.globalAlpha = 1;
+    ctx.fillStyle = '#237b64'; ctx.font = 'bold 34px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('成功！', VIEW_W / 2, 245); ctx.textAlign = 'start';
   }
-  function spawnParticles(x, y, n, color) {
-    for (let i = 0; i < n && particles.length < MAX_PARTICLES; i++) {
-      particles.push({ x, y, vx: (Math.random() - 0.5) * 90, vy: (Math.random() - 0.85) * 90, life: 0.48, color });
-    }
-  }
+  function spawnParticles(x, y, n, color) { for (let i = 0; i < n && particles.length < MAX_PARTICLES; i++) particles.push({ x, y, vx: (Math.random() - 0.5) * 90, vy: (Math.random() - 0.85) * 90, life: 0.48, color }); }
   function updateParticles(dt) {
-    for (let i = particles.length - 1; i >= 0; i--) {
-      const p = particles[i];
-      p.life -= dt;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      if (p.life <= 0) particles.splice(i, 1);
-    }
-    for (let i = brightMarks.length - 1; i >= 0; i--) {
-      brightMarks[i].life -= dt;
-      if (brightMarks[i].life <= 0) brightMarks.splice(i, 1);
-    }
+    for (let i = particles.length - 1; i >= 0; i--) { const p = particles[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; if (p.life <= 0) particles.splice(i, 1); }
+    for (let i = brightMarks.length - 1; i >= 0; i--) { brightMarks[i].life -= dt; if (brightMarks[i].life <= 0) brightMarks.splice(i, 1); }
   }
-  function drawParticles() {
-    for (const p of particles) {
-      if (!isNearView(p.y, 3)) continue;
-      ctx.globalAlpha = Math.max(0, p.life * 2);
-      ctx.fillStyle = p.color;
-      ctx.fillRect(p.x, p.y, 3, 3);
-    }
-    ctx.globalAlpha = 1;
-  }
+  function drawParticles() { for (const p of particles) if (isNearView(p.y, 3)) { ctx.globalAlpha = Math.max(0, p.life * 2); ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, 3, 3); } ctx.globalAlpha = 1; }
 
-  // 14. UI更新
-  function updateHud(force) {
+  // 14. UI・結果・通信
+  function updateHud() {
     const sec = Math.max(0, remainingMs / 1000);
-    $('timeHud').textContent = '残り ' + (sec > 10 ? Math.ceil(sec) : sec.toFixed(1));
-    $('timeHud').style.color = sec <= 10 ? '#b53d35' : '';
-    $('deliveredHud').textContent = '届けた ' + delivered + '/' + NEED;
-    $('deliveredHud').style.transform = deliveredFlash > 0 ? 'scale(1.08)' : 'scale(1)';
+    $('timeHud').textContent = '残り ' + (sec > 10 ? Math.ceil(sec) : sec.toFixed(1)); $('timeHud').style.color = sec <= 10 ? '#b53d35' : '';
+    $('deliveredHud').textContent = '届けた ' + delivered + '/' + NEED; $('deliveredHud').style.transform = deliveredFlash > 0 ? 'scale(1.08)' : 'scale(1)';
     $('stageHud').textContent = 'ステージ：' + currentStage.shortName + '　左バーで上下を見る / 砂を削って🚬を🦊へ届けよう';
-    $('statusHud').textContent = '失った ' + lost + '個　危険ゾーンと最下部に注意';
-    $('statusHud').style.color = lostFlash > 0 ? '#5b1d75' : '';
+    $('statusHud').textContent = '失った ' + lost + '個　危険ゾーンと最下部に注意'; $('statusHud').style.color = lostFlash > 0 ? '#5b1d75' : '';
   }
-
-  // 15. 音
-  function playTone() { /* 音はデフォルト無効。ブラウザ制限と軽量性を優先。 */ }
-
-  // 16. 結果処理
   function calculateBreakdown(reason, fixedRemainingMs = remainingMs) {
-    const timeBonus = Math.floor(Math.max(0, fixedRemainingMs) / 10);
-    const lostPenalty = lost * 300;
-    const retirePenalty = reason === 'retire' ? 5000 : 0;
+    const timeBonus = Math.floor(Math.max(0, fixedRemainingMs) / 10), lostPenalty = lost * 300, retirePenalty = reason === 'retire' ? 5000 : 0;
     return { deliveredPoints: deliveredScore, timeBonus, lostPenalty, retirePenalty, total: deliveredScore + timeBonus - lostPenalty - retirePenalty };
   }
-  function calculateScore(reason) { return calculateBreakdown(reason).total; }
   function finishGame(reason, endCause = reason) {
     if (resultFinalized) return;
     resultFinalized = true;
     if (state === STATES.PLAYING && (reason !== 'clear' || clearRemainingMs === null)) syncRemainingTime();
     const finalRemainingMs = reason === 'clear' && clearRemainingMs !== null ? clearRemainingMs : Math.max(0, remainingMs);
-    remainingMs = finalRemainingMs;
-    stopLoop();
+    remainingMs = finalRemainingMs; stopLoop();
     const breakdown = calculateBreakdown(reason, finalRemainingMs);
-    resultData = { reason, endCause, playId: currentPlayId, score: breakdown.total, breakdown, delivered, lost, remainingMs: Math.max(0, finalRemainingMs), playerName: $('playerName').value.trim() || 'ななし', stageName: currentStage.name };
+    resultData = { reason, endCause, playId: currentPlayId, score: breakdown.total, breakdown, delivered, lost, remainingMs: finalRemainingMs, playerName: $('playerName').value.trim() || 'ななし', stageName: currentStage.name };
     setState(STATES.RESULT);
     $('resultTitle').textContent = reason === 'clear' ? '結果：成功' : reason === 'retire' ? '結果：リタイア' : '結果：失敗';
-    $('resultScore').textContent = breakdown.total + '点';
-    $('badComment').textContent = BAD_COMMENT;
+    $('resultScore').textContent = breakdown.total + '点'; $('badComment').textContent = BAD_COMMENT;
     $('badComment').classList.toggle('hide', !(breakdown.total < 0 || reason === 'fail' || reason === 'retire'));
-    $('resultDelivered').textContent = '届けた ' + resultData.delivered + '個';
-    $('resultLost').textContent = '失った ' + resultData.lost + '個';
-    $('resultTime').textContent = '残り ' + (resultData.remainingMs / 1000).toFixed(1) + '秒';
-    $('resultStage').textContent = 'ステージ：' + resultData.stageName;
-    $('scoreBreakdown').innerHTML = '届けた点：' + breakdown.deliveredPoints.toLocaleString() + '点<br>' +
-      '残り時間：' + breakdown.timeBonus.toLocaleString() + '点<br>' +
-      '失ったペナルティ：-' + breakdown.lostPenalty.toLocaleString() + '点<br>' +
-      (breakdown.retirePenalty ? 'リタイア：-' + breakdown.retirePenalty.toLocaleString() + '点<br>' : '') +
-      '合計：' + breakdown.total.toLocaleString() + '点';
-    $('rankingStatus').textContent = 'ランキング送信中…';
-    $('rankingBox').textContent = '読み込み中…';
-    const requestId = ++resultRequestSequence;
-    activeResultRequestId = requestId;
-    runResultNetwork(resultData, requestId);
+    $('resultDelivered').textContent = '届けた ' + resultData.delivered + '個'; $('resultLost').textContent = '失った ' + resultData.lost + '個';
+    $('resultTime').textContent = '残り ' + (resultData.remainingMs / 1000).toFixed(1) + '秒'; $('resultStage').textContent = 'ステージ：' + resultData.stageName;
+    $('scoreBreakdown').innerHTML = '届けた点：' + breakdown.deliveredPoints.toLocaleString() + '点<br>残り時間：' + breakdown.timeBonus.toLocaleString() + '点<br>失ったペナルティ：-' + breakdown.lostPenalty.toLocaleString() + '点<br>' + (breakdown.retirePenalty ? 'リタイア：-' + breakdown.retirePenalty.toLocaleString() + '点<br>' : '') + '合計：' + breakdown.total.toLocaleString() + '点';
+    $('rankingStatus').textContent = 'ランキング送信中…'; $('rankingBox').textContent = '読み込み中…';
+    const requestId = ++resultRequestSequence; activeResultRequestId = requestId; runResultNetwork(resultData, requestId);
   }
-
-  function isCurrentResultRequest(requestId) {
-    return state === STATES.RESULT && requestId === activeResultRequestId;
-  }
+  function isCurrentResultRequest(requestId) { return state === STATES.RESULT && requestId === activeResultRequestId; }
   async function supa(path, opts = {}) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
+    const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 8000);
     try {
       const res = await fetch(SUPABASE_URL + path, { ...opts, signal: controller.signal, headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal', ...(opts.headers || {}) } });
       if (!res.ok) throw new Error('supabase');
       return res.status === 204 ? null : res.json();
-    } finally {
-      clearTimeout(timer);
-    }
+    } finally { clearTimeout(timer); }
   }
   async function submitScoreOnce(r) {
     if (submittedPlayIds.has(r.playId)) return;
@@ -1017,110 +953,84 @@
     while (submittedPlayIds.size > 32) submittedPlayIds.delete(submittedPlayIds.values().next().value);
     await supa('/rest/v1/rpc/submit_score', { method: 'POST', body: JSON.stringify({ p_display_name: r.playerName, p_game_slug: GAME_SLUG, p_score: r.score, p_client_version: 'tabakon-20260614-gameplay2' }) });
   }
-  async function fetchRankingData() {
-    const data = await supa('/rest/v1/rpc/get_best_score_ranking', { method: 'POST', headers: { Prefer: '' }, body: JSON.stringify({ p_game_slug: GAME_SLUG, p_limit: 10 }) });
-    return Array.isArray(data) ? data : [];
-  }
+  async function fetchRankingData() { const data = await supa('/rest/v1/rpc/get_best_score_ranking', { method: 'POST', headers: { Prefer: '' }, body: JSON.stringify({ p_game_slug: GAME_SLUG, p_limit: 10 }) }); return Array.isArray(data) ? data : []; }
   function renderRankingRows(list) {
-    $('rankingBox').innerHTML = list.length ? '<ol>' + list.map((r, index) => {
-      const name = r.display_name || r.player_name || r.name || 'ななし';
-      const score = r.score ?? r.best_score ?? r.first_score ?? 0;
-      const rank = r.rank_no || r.rank || index + 1;
-      return '<li>' + rank + '位 ' + escapeHtml(name) + '：' + Number(score).toLocaleString() + '点</li>';
-    }).join('') + '</ol>' : 'まだランキングがありません';
+    $('rankingBox').innerHTML = list.length ? '<ol>' + list.map((r, index) => '<li>' + (r.rank_no || r.rank || index + 1) + '位 ' + escapeHtml(r.display_name || r.player_name || r.name || 'ななし') + '：' + Number(r.score ?? r.best_score ?? r.first_score ?? 0).toLocaleString() + '点</li>').join('') + '</ol>' : 'まだランキングがありません';
   }
   async function runResultNetwork(result, requestId) {
     let submitOk = false;
-    try {
-      await submitScoreOnce(result);
-      submitOk = true;
-    } catch (e) {
-      submitOk = false;
-    }
+    try { await submitScoreOnce(result); submitOk = true; } catch (error) { submitOk = false; }
     if (!isCurrentResultRequest(requestId)) return;
-    $('rankingStatus').textContent = submitOk ? 'ランキング送信済み' : 'ランキング送信に失敗しました';
-    $('rankingBox').textContent = 'ランキング読み込み中…';
-    try {
-      const rows = await fetchRankingData();
-      if (!isCurrentResultRequest(requestId)) return;
-      renderRankingRows(rows);
-    } catch (e) {
-      if (!isCurrentResultRequest(requestId)) return;
-      $('rankingBox').textContent = 'ランキング取得に失敗しました';
-    }
+    $('rankingStatus').textContent = submitOk ? 'ランキング送信済み' : 'ランキング送信に失敗しました'; $('rankingBox').textContent = 'ランキング読み込み中…';
+    try { const rows = await fetchRankingData(); if (isCurrentResultRequest(requestId)) renderRankingRows(rows); }
+    catch (error) { if (isCurrentResultRequest(requestId)) $('rankingBox').textContent = 'ランキング取得に失敗しました'; }
   }
-
-  function escapeHtml(s) { return String(s).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
-
-  // 19. シェア
+  function escapeHtml(s) { return String(s).replace(/[&<>\"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[m])); }
   function homeShareText() { return 'たばコン\n砂を削って、🚬を🦊へ届けよう！\n' + PUBLIC_URL; }
-  function resultShareText() {
-    const r = resultData;
-    const line = r.reason === 'clear' ? '🚬を🦊へ届けた！' : r.reason === 'retire' ? '途中であきらめた…' : '🚬を🦊へ届けきれなかった…';
-    return 'たばコン\n' + line + '\n配達スコア：' + r.score + '点\n' + PUBLIC_URL;
+  function resultShareText() { const r = resultData; const line = r.reason === 'clear' ? '🚬を🦊へ届けた！' : r.reason === 'retire' ? '途中であきらめた…' : '🚬を🦊へ届けきれなかった…'; return 'たばコン\n' + line + '\n配達スコア：' + r.score + '点\n' + PUBLIC_URL; }
+  async function shareText(text) { try { if (navigator.share) await navigator.share({ text }); else await navigator.clipboard.writeText(text); } catch (error) { console.warn('share failed', error); } }
+
+  // 15. 固定間隔ゲームループ
+  function physicsStep(dt) {
+    updateMechanisms(dt);
+    updateCigarettes(dt);
   }
-  async function shareText(text) { try { if (navigator.share) await navigator.share({ text }); else await navigator.clipboard.writeText(text); } catch (e) { console.warn('share failed', e); } }
-
-  // 20. デバッグ
-  window.tabakonDebug = { getState: () => state, finishGame, resetGame, showError, validateAllStages, validateStageGoalAccess };
-
-  // 21. 起動処理
   function gameLoop(ts) {
     if (state !== STATES.PLAYING) { loopRunning = false; rafId = 0; return; }
     rafId = requestAnimationFrame(gameLoop);
-    const dt = Math.min(0.033, (ts - lastTs) / 1000 || 0);
+    const frameDt = clamp((ts - lastTs) / 1000 || 0, 0, MAX_ACCUMULATED_TIME);
     lastTs = ts;
-    if (!pendingClear) syncRemainingTime(ts);
-    deliveredFlash = Math.max(0, deliveredFlash - dt);
-    lostFlash = Math.max(0, lostFlash - dt);
-    if (successFlash > 0) {
-      successFlash = Math.max(0, successFlash - dt);
-      if (successFlash === 0 && pendingClear) { finishGame('clear', 'threshold_clear'); return; }
+    deliveredFlash = Math.max(0, deliveredFlash - frameDt); lostFlash = Math.max(0, lostFlash - frameDt);
+    if (pendingClear) {
+      physicsAccumulator = 0;
+      successFlash = Math.max(0, successFlash - frameDt);
+      updateParticles(frameDt); updateHud(); draw();
+      if (successFlash === 0) finishGame('clear', 'threshold_clear');
+      return;
     }
-    if (!pendingClear && remainingMs <= 0) { remainingMs = 0; finishGame(delivered >= NEED ? 'clear' : 'fail', 'timeout'); return; }
-    if (!pendingClear) {
-      updateMechanisms(dt);
-      updateCigarettes(dt);
+    syncRemainingTime(ts);
+    if (remainingMs <= 0) { remainingMs = 0; finishGame(delivered >= NEED ? 'clear' : 'fail', 'timeout'); return; }
+    physicsAccumulator = Math.min(MAX_ACCUMULATED_TIME, physicsAccumulator + frameDt);
+    let steps = 0;
+    while (physicsAccumulator >= PHYSICS_DT && steps < MAX_PHYSICS_STEPS && state === STATES.PLAYING && !pendingClear) {
+      physicsStep(PHYSICS_DT);
+      physicsAccumulator -= PHYSICS_DT;
+      steps++;
+      if (checkAllCigarettesResolved(ts)) break;
     }
     if (state !== STATES.PLAYING) return;
-    if (checkAllCigarettesResolved(ts)) return;
-    updateParticles(dt);
-    updateHud();
-    draw();
+    if (!pendingClear && checkAllCigarettesResolved(ts)) return;
+    updateParticles(frameDt); updateHud(); draw();
   }
-  function ensureLoop() { if (!loopRunning) { loopRunning = true; lastTs = performance.now(); rafId = requestAnimationFrame(gameLoop); } }
-  function stopLoop() { if (rafId) { cancelAnimationFrame(rafId); rafId = 0; } loopRunning = false; }
+  function ensureLoop() { if (!loopRunning) { loopRunning = true; lastTs = performance.now(); physicsAccumulator = 0; rafId = requestAnimationFrame(gameLoop); } }
+  function stopLoop() { if (rafId) { cancelAnimationFrame(rafId); rafId = 0; } loopRunning = false; physicsAccumulator = 0; }
+
+  // 16. 起動
+  window.tabakonDebug = {
+    getState: () => state,
+    getPhysics: () => ({ accumulator: physicsAccumulator, active: cigarettes.filter(c => c.active).length, sleeping: cigarettes.filter(c => c.active && c.sleeping).length }),
+    finishGame, resetGame, showError, validateAllStages, validateStageGoalAccess
+  };
   function init() {
     try {
-      const startBtn = $('startBtn');
-      const playerName = $('playerName');
+      const startBtn = $('startBtn'), playerName = $('playerName');
       if (!startBtn || !playerName) { showError('開始ボタンまたは名前入力欄の取得に失敗しました。', new Error('missing start controls')); return; }
-      const saved = localStorage.getItem('tabakon_player_name');
-      if (saved) playerName.value = saved;
-      const updateStartEnabled = () => {
-        const hasName = playerName.value.trim().length > 0;
-        startBtn.disabled = !hasName;
-        $('nameError').textContent = hasName ? '' : '名前を入力すると開始できます。';
-      };
+      const saved = localStorage.getItem('tabakon_player_name'); if (saved) playerName.value = saved;
+      const updateStartEnabled = () => { const hasName = playerName.value.trim().length > 0; startBtn.disabled = !hasName; $('nameError').textContent = hasName ? '' : '名前を入力すると開始できます。'; };
       playerName.addEventListener('input', updateStartEnabled);
-      playerName.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); if (playerName.value.trim()) startReadyCountdown(); }
-      });
-      updateStartEnabled();
-      startBtn.onclick = startReadyCountdown;
-      $('ruleBtn').onclick = () => setState(STATES.RULE);
-      $('backHomeBtn').onclick = () => setState(STATES.HOME);
-      $('errorBackBtn').onclick = () => setState(STATES.HOME);
+      playerName.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (playerName.value.trim()) startReadyCountdown(); } });
+      updateStartEnabled(); startBtn.onclick = startReadyCountdown;
+      $('ruleBtn').onclick = () => setState(STATES.RULE); $('backHomeBtn').onclick = () => setState(STATES.HOME); $('errorBackBtn').onclick = () => setState(STATES.HOME);
       $('retryBtn').onclick = () => beginReadySequence();
       $('retireBtn').onclick = () => { if (state === STATES.PLAYING && confirm('リタイアすると-5000点のペナルティです。やめますか？')) finishGame('retire', 'retire'); };
-      $('homeShareBtn').onclick = () => shareText(homeShareText());
-      $('resultShareBtn').onclick = () => resultData && shareText(resultShareText());
+      $('homeShareBtn').onclick = () => shareText(homeShareText()); $('resultShareBtn').onclick = () => resultData && shareText(resultShareText());
       ['touchstart', 'mousedown'].forEach(ev => canvas.addEventListener(ev, beginInput, { passive: false }));
       ['touchmove', 'mousemove'].forEach(ev => canvas.addEventListener(ev, moveInput, { passive: false }));
       ['touchend', 'touchcancel', 'mouseup', 'mouseleave'].forEach(ev => canvas.addEventListener(ev, endInput, { passive: false }));
       document.addEventListener('gesturestart', e => e.preventDefault());
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden && state === STATES.PLAYING) {
+          lastTs = performance.now(); physicsAccumulator = 0;
           if (pendingClear) return;
           syncRemainingTime();
           if (delivered >= NEED) finishGame('clear', 'threshold_clear');
@@ -1130,12 +1040,8 @@
       });
       let lastTouch = 0;
       document.addEventListener('touchend', e => { const now = Date.now(); if (now - lastTouch < 350) e.preventDefault(); lastTouch = now; }, { passive: false });
-      resetGame();
-      draw();
-      console.log('[tabakon] init complete');
-    } catch (error) {
-      showError('初期化に失敗しました。ページを再読み込みしてください。', error);
-    }
+      resetGame(); draw();
+    } catch (error) { showError('初期化に失敗しました。ページを再読み込みしてください。', error); }
   }
   init();
 })();
