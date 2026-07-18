@@ -99,9 +99,17 @@
   const BALL_OVERLAP_SLOP = 0.1;
   const BALL_POSITION_CORRECTION = 0.8;
   const BALL_MAX_SPEED = 900;
-  const SLEEP_SPEED = 3;
-  const SLEEP_DELAY = 0.6;
+  const TERRAIN_BOUNCE_MIN_SPEED = 36;
+  const BALL_BOUNCE_MIN_SPEED = 18;
+  const GROUND_STOP_SPEED = 22;
+  const STATIC_FRICTION_SPEED = 12;
+  const FLAT_GROUND_NORMAL_X = 0.12;
+  const GROUND_NORMAL_BLEND = 0.24;
+  const GROUND_STABLE_DELAY = 0.18;
+  const SLEEP_SPEED = 4;
+  const SLEEP_DELAY = 0.35;
   const WAKE_IMPULSE = 12;
+  const WAKE_RELATIVE_SPEED = 8;
   const ROTOR_CONTACT_COOLDOWN = 0.05;
 
   // 2. Supabase設定
@@ -344,6 +352,7 @@
         id: i, x: p.x, y: p.y, vx: (i % 5 - 2) * 5, vy: 0, r: BALL_RADIUS, type: typePlan[i],
         active: true, delivered: false, lost: false, angle: 0, squash: 0, sink: 0, bottomTimer: 0,
         stuckTimer: 0, lastX: p.x, lastY: p.y, grounded: false, sleeping: false, sleepTimer: 0,
+        groundNormalX: 0, groundNormalY: -1, groundContactTime: 0,
         barContactId: null, barContactTime: 0, rotorContactCooldown: 0
       });
     }
@@ -489,22 +498,28 @@
     }
     return false;
   }
-  function findDeepestTerrainOverlap(cig) {
+  function hasTerrainSupport(cig) {
+    const probeY = cig.y + cig.r + 1;
+    return solidAt(cig.x, probeY) || solidAt(cig.x - cig.r * 0.55, probeY) || solidAt(cig.x + cig.r * 0.55, probeY);
+  }
+  function findTerrainManifold(cig) {
     const minX = clamp(Math.floor((cig.x - cig.r) / CELL_W), 0, GRID_W - 1);
     const maxX = clamp(Math.floor((cig.x + cig.r) / CELL_W), 0, GRID_W - 1);
     const minY = clamp(Math.floor((cig.y - cig.r) / CELL_H), 0, GRID_H - 1);
     const maxY = clamp(Math.floor((cig.y + cig.r) / CELL_H), 0, GRID_H - 1);
-    let best = null;
+    let sumX = 0, sumY = 0, totalWeight = 0, maxPenetration = 0, deepest = null, contactCount = 0;
     for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
       const value = grid[idx(x, y)];
       if (value !== 1 && value !== 2) continue;
       const rx = gx(x), ry = gy(y), rw = CELL_W, rh = CELL_H;
-      const nx = clamp(cig.x, rx, rx + rw), ny = clamp(cig.y, ry, ry + rh);
-      let dx = cig.x - nx, dy = cig.y - ny;
-      let distance = Math.hypot(dx, dy);
+      const nearestX = clamp(cig.x, rx, rx + rw), nearestY = clamp(cig.y, ry, ry + rh);
+      let dx = cig.x - nearestX, dy = cig.y - nearestY;
+      const distance = Math.hypot(dx, dy);
       let normalX, normalY, penetration;
       if (distance > 1e-6) {
-        normalX = dx / distance; normalY = dy / distance; penetration = cig.r - distance;
+        normalX = dx / distance;
+        normalY = dy / distance;
+        penetration = cig.r - distance;
       } else {
         const choices = [
           { d: Math.abs(cig.x - rx), nx: -1, ny: 0 },
@@ -512,11 +527,26 @@
           { d: Math.abs(cig.y - ry), nx: 0, ny: -1 },
           { d: Math.abs(ry + rh - cig.y), nx: 0, ny: 1 }
         ].sort((a, b) => a.d - b.d);
-        normalX = choices[0].nx; normalY = choices[0].ny; penetration = cig.r + choices[0].d;
+        normalX = choices[0].nx;
+        normalY = choices[0].ny;
+        penetration = cig.r + choices[0].d;
       }
-      if (penetration > 0 && (!best || penetration > best.penetration)) best = { normalX, normalY, penetration };
+      if (penetration <= 0) continue;
+      const weight = penetration + 0.001;
+      sumX += normalX * weight;
+      sumY += normalY * weight;
+      totalWeight += weight;
+      contactCount++;
+      if (penetration > maxPenetration) {
+        maxPenetration = penetration;
+        deepest = { normalX, normalY };
+      }
     }
-    return best;
+    if (!contactCount || !deepest) return null;
+    const length = Math.hypot(sumX, sumY);
+    const normalX = length > 1e-6 ? sumX / length : deepest.normalX;
+    const normalY = length > 1e-6 ? sumY / length : deepest.normalY;
+    return { normalX, normalY, penetration: maxPenetration, contactCount, totalWeight };
   }
   function clampBallSpeed(cig) {
     const speed = Math.hypot(cig.vx, cig.vy);
@@ -528,35 +558,85 @@
     if (cig.y < cig.r) { cig.y = cig.r; cig.vy = Math.abs(cig.vy) * 0.2; }
   }
   function resolveTerrainCollisions(cig, cfg) {
-    let grounded = false;
+    let grounded = false, groundX = 0, groundY = 0, groundWeight = 0, maxImpact = 0;
     for (let pass = 0; pass < 6; pass++) {
-      const hit = findDeepestTerrainOverlap(cig);
+      const hit = findTerrainManifold(cig);
       if (!hit) break;
       cig.x += hit.normalX * (hit.penetration + 0.02);
       cig.y += hit.normalY * (hit.penetration + 0.02);
       const normalVelocity = cig.vx * hit.normalX + cig.vy * hit.normalY;
       if (normalVelocity < 0) {
-        const impact = Math.abs(normalVelocity);
-        const restitution = hit.normalY < -0.45 ? cfg.bounce : Math.min(cfg.bounce, 0.12);
+        const impact = -normalVelocity;
+        maxImpact = Math.max(maxImpact, impact);
+        const restitution = impact >= TERRAIN_BOUNCE_MIN_SPEED
+          ? (hit.normalY < -0.45 ? cfg.bounce : Math.min(cfg.bounce, 0.12))
+          : 0;
         const impulse = -(1 + restitution) * normalVelocity;
         cig.vx += impulse * hit.normalX;
         cig.vy += impulse * hit.normalY;
         if (hit.normalY < -0.45 && impact > 220) cig.squash = Math.min(0.22, impact / 2200);
       }
-      if (hit.normalY < -0.45) grounded = true;
+      if (hit.normalY < -0.45) {
+        const weight = hit.penetration + 1;
+        grounded = true;
+        groundX += hit.normalX * weight;
+        groundY += hit.normalY * weight;
+        groundWeight += weight;
+      }
     }
-    return grounded;
+    if (!grounded) return { grounded: false, normalX: 0, normalY: -1, maxImpact };
+    const length = Math.hypot(groundX, groundY);
+    return {
+      grounded: true,
+      normalX: length > 1e-6 ? groundX / length : 0,
+      normalY: length > 1e-6 ? groundY / length : -1,
+      maxImpact
+    };
   }
-  function applySlopeRoll(cig, cfg, dt) {
-    const probeY = cig.y + cig.r + 3;
-    const belowLeft = solidAt(cig.x - cig.r * 0.7, probeY);
-    const belowRight = solidAt(cig.x + cig.r * 0.7, probeY);
-    if (!belowLeft && !belowRight) {
-      if (Math.abs(cig.vx) < 6) cig.vx += (goal.x + goal.w / 2 > cig.x ? 1 : -1) * cfg.gravity * 0.1 * dt;
+  function updateGroundContact(cig, contact, dt) {
+    if (!contact.grounded) {
+      cig.grounded = false;
+      cig.groundContactTime = 0;
       return;
     }
-    if (belowLeft === belowRight) return;
-    cig.vx += (belowRight ? -1 : 1) * cfg.gravity * 0.6 * dt;
+    let nx = contact.normalX, ny = contact.normalY;
+    if (cig.grounded) {
+      const dot = cig.groundNormalX * nx + cig.groundNormalY * ny;
+      if (dot >= 0.82) {
+        nx = cig.groundNormalX * (1 - GROUND_NORMAL_BLEND) + nx * GROUND_NORMAL_BLEND;
+        ny = cig.groundNormalY * (1 - GROUND_NORMAL_BLEND) + ny * GROUND_NORMAL_BLEND;
+        const length = Math.hypot(nx, ny) || 1;
+        nx /= length;
+        ny /= length;
+        cig.groundContactTime += dt;
+      } else {
+        cig.groundContactTime = 0;
+      }
+    } else {
+      cig.groundContactTime = 0;
+    }
+    cig.grounded = true;
+    cig.groundNormalX = nx;
+    cig.groundNormalY = ny;
+  }
+  function applyGroundResponse(cig, cfg, dt) {
+    const nx = cig.groundNormalX, ny = cig.groundNormalY;
+    const normalVelocity = cig.vx * nx + cig.vy * ny;
+    if (normalVelocity < 0 && -normalVelocity < GROUND_STOP_SPEED) {
+      cig.vx -= normalVelocity * nx;
+      cig.vy -= normalVelocity * ny;
+    }
+    const flatGround = Math.abs(nx) <= FLAT_GROUND_NORMAL_X && ny < -0.95;
+    if (flatGround) {
+      if (Math.abs(cig.vx) <= STATIC_FRICTION_SPEED) cig.vx = 0;
+      else cig.vx *= Math.pow(0.82, dt * 60);
+      if (Math.abs(cig.vy) <= GROUND_STOP_SPEED) cig.vy = 0;
+      return;
+    }
+    const slopeAccelerationX = -cfg.gravity * ny * nx;
+    if (Math.abs(slopeAccelerationX) > 8) cig.vx += slopeAccelerationX * dt * 0.72;
+    cig.vx *= Math.pow(0.985, dt * 60);
+    if (Math.abs(cig.vy) <= 8) cig.vy = 0;
   }
   function closestPointOnRotor(cig, rotor) {
     const ux = Math.cos(rotor.angle), uy = Math.sin(rotor.angle);
@@ -628,7 +708,7 @@
   }
   function moveCigarette(cig, cfg, dt) {
     if (cig.sleeping) {
-      const supported = terrainOverlapAt(cig.x, cig.y + 0.75, cig.r) || isMechanismTouching(cig);
+      const supported = hasTerrainSupport(cig) || isMechanismTouching(cig);
       if (supported) { cig.vx = 0; cig.vy = 0; cig.grounded = true; return false; }
       wakeCigarette(cig);
     }
@@ -638,23 +718,30 @@
     const distance = Math.hypot(cig.vx * dt, cig.vy * dt);
     const substeps = clamp(Math.ceil(distance / (BALL_RADIUS * 0.5)), 1, 4);
     const subDt = dt / substeps;
-    let grounded = false, mechanismContact = false;
+    let grounded = false, groundX = 0, groundY = 0, groundSamples = 0, mechanismContact = false;
     for (let step = 0; step < substeps; step++) {
       const previousY = cig.y;
       cig.x += cig.vx * subDt;
       cig.y += cig.vy * subDt;
       resolveWorldBounds(cig);
-      grounded = resolveTerrainCollisions(cig, cfg) || grounded;
+      const contact = resolveTerrainCollisions(cig, cfg);
+      if (contact.grounded) {
+        grounded = true;
+        groundX += contact.normalX;
+        groundY += contact.normalY;
+        groundSamples++;
+      }
       mechanismContact = resolveMechanismCollisions(cig, cfg, subDt, previousY) || mechanismContact;
       clampBallSpeed(cig);
       if (!cig.active || pendingClear) break;
     }
-    if (grounded) {
-      if (Math.abs(cig.vy) < 18) cig.vy = 0;
-      cig.vx *= Math.pow(0.96, dt * 60);
-      applySlopeRoll(cig, cfg, dt);
-    }
-    cig.grounded = grounded;
+    const groundLength = Math.hypot(groundX, groundY);
+    updateGroundContact(cig, {
+      grounded,
+      normalX: groundSamples && groundLength > 1e-6 ? groundX / groundLength : 0,
+      normalY: groundSamples && groundLength > 1e-6 ? groundY / groundLength : -1
+    }, dt);
+    if (cig.grounded) applyGroundResponse(cig, cfg, dt);
     cig.angle += cig.vx * dt / Math.max(1, BALL_RADIUS);
     if (cig.squash) cig.squash = Math.max(0, cig.squash - dt * 3);
     return mechanismContact;
@@ -668,21 +755,23 @@
     let distance = Math.hypot(dx, dy);
     const minDistance = a.r + b.r;
     if (distance >= minDistance) return;
+    const overlap = minDistance - distance;
+    if (a.sleeping && b.sleeping && overlap <= 0.5) return;
     let nx, ny;
     if (distance < 1e-6) { const n = deterministicPairNormal(a, b); nx = n.x; ny = n.y; distance = 0; }
     else { nx = dx / distance; ny = dy / distance; }
     const cfgA = TYPES[a.type], cfgB = TYPES[b.type];
     const invMassA = 1 / cfgA.mass, invMassB = 1 / cfgB.mass;
     const invMassSum = invMassA + invMassB;
-    const overlap = minDistance - distance;
     const correction = Math.max(0, overlap - BALL_OVERLAP_SLOP) * BALL_POSITION_CORRECTION / invMassSum;
     a.x -= nx * correction * invMassA; a.y -= ny * correction * invMassA;
     b.x += nx * correction * invMassB; b.y += ny * correction * invMassB;
     const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
     const velocityAlongNormal = rvx * nx + rvy * ny;
+    const relativeApproachSpeed = Math.max(0, -velocityAlongNormal);
     let impulseMagnitude = 0;
     if (velocityAlongNormal < 0) {
-      const restitution = Math.min(cfgA.bounce, cfgB.bounce);
+      const restitution = relativeApproachSpeed >= BALL_BOUNCE_MIN_SPEED ? Math.min(cfgA.bounce, cfgB.bounce) : 0;
       impulseMagnitude = -(1 + restitution) * velocityAlongNormal / invMassSum;
       const ix = impulseMagnitude * nx, iy = impulseMagnitude * ny;
       a.vx -= ix * invMassA; a.vy -= iy * invMassA;
@@ -692,13 +781,16 @@
       if (tangentLength > 1e-6) {
         const tx = txRaw / tangentLength, ty = tyRaw / tangentLength;
         let frictionImpulse = -(rvx * tx + rvy * ty) / invMassSum;
-        const maxFriction = Math.abs(impulseMagnitude) * 0.08;
+        const maxFriction = Math.abs(impulseMagnitude) * 0.12;
         frictionImpulse = clamp(frictionImpulse, -maxFriction, maxFriction);
         a.vx -= frictionImpulse * tx * invMassA; a.vy -= frictionImpulse * ty * invMassA;
         b.vx += frictionImpulse * tx * invMassB; b.vy += frictionImpulse * ty * invMassB;
       }
     }
-    if (overlap > 0.5 || Math.abs(impulseMagnitude) >= WAKE_IMPULSE) { wakeCigarette(a); wakeCigarette(b); }
+    if (relativeApproachSpeed >= WAKE_RELATIVE_SPEED || Math.abs(impulseMagnitude) >= WAKE_IMPULSE) {
+      wakeCigarette(a);
+      wakeCigarette(b);
+    }
   }
   function resolveBallCollisions() {
     const active = cigarettes.filter(c => c.active);
@@ -707,14 +799,20 @@
     }
     for (const cig of active) {
       resolveWorldBounds(cig);
-      resolveTerrainCollisions(cig, TYPES[cig.type]);
+      const contact = resolveTerrainCollisions(cig, TYPES[cig.type]);
+      if (contact.grounded && !cig.grounded) {
+        cig.grounded = true;
+        cig.groundNormalX = contact.normalX;
+        cig.groundNormalY = contact.normalY;
+      }
       clampBallSpeed(cig);
     }
   }
   function updateSleepState(cig, dt, mechanismContact) {
     if (!cig.active) return;
     const speed = Math.hypot(cig.vx, cig.vy);
-    if (cig.grounded && !mechanismContact && speed < SLEEP_SPEED) {
+    const flatGround = Math.abs(cig.groundNormalX) <= FLAT_GROUND_NORMAL_X && cig.groundNormalY < -0.95;
+    if (cig.grounded && flatGround && cig.groundContactTime >= GROUND_STABLE_DELAY && !mechanismContact && speed < SLEEP_SPEED) {
       cig.sleepTimer += dt;
       if (cig.sleepTimer >= SLEEP_DELAY) { cig.sleeping = true; cig.vx = 0; cig.vy = 0; }
     } else if (!cig.sleeping) cig.sleepTimer = 0;
