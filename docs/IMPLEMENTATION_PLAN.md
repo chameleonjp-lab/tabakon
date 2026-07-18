@@ -1,140 +1,192 @@
 # たばコン 実装計画書
 
-この文書は、現在実装済みの構造と、今後の改修予定を分けて記録する。未実装の将来案を現在の仕様として扱わない。
+この文書は、現在実装済みの構造と今後の改修予定を分ける。完成までの順序・禁止事項・総合合格条件は`docs/COMPLETION_MASTER_PLAN.md`を正本とする。
 
 ## 第1部：現在の実装構造
 
-### 1. 基本
+### 1. 基本契約
 
-- ゲーム名: たばコン
-- game_slug: `tabakon`
-- 公開URL: `https://chameleonjp.codeberg.page/tabakon/`
-- ゲーム本体: `index.html`
-- 表示Canvas: 320×480
-- 内部ゲーム世界: 320×960
-- 砂グリッド: 48×144
-- 左スクロールバー表示幅: 24px
+- ゲーム本体: `index.html` 1ファイル
+- 表示Canvas論理座標: 320×480
+- 内部世界: 320×960
+- 地形グリッド: 48×144
+- 🚬: 30個
+- 成功: 20個
+- 制限時間: 60秒
+- 左スクロールバー: 24px
+- 全10ステージ共通ランキング
 
-Canvasは `setupCanvasResolution()` で `devicePixelRatio` に合わせて内部解像度を調整する。ただし論理座標は320×480で、内部世界は `cameraY` と `screenToWorld()` で扱う。
+### 2. 完了段階
 
-### 2. 状態管理
+- PR1: 文書と現行実装の整合
+- PR2: 絶対期限タイマー、結果固定、終了判定、通信競合対策
+- PR2追補: 成功演出中の描画継続
+- PR3: 固定間隔物理、半径統一、🚬同士の衝突、休止/復帰、すり抜け防止、バー/ローター接触安定化
 
-現在の状態は `HOME`, `RULE`, `READY`, `PLAYING`, `RESULT`, `ERROR`。`READY` では3、2、1のカウントを行い、`PLAYING` 開始時に `startSessionClock()` で60秒の期限を設定する。`PLAYING` 中だけタイマー、物理、砂削り、当たり判定を進め、残り時間は `syncRemainingTime()` で絶対期限から同期する。`RESULT` では `stopLoop()` でゲームループを止める。
+PR3はこのブランチで実装済みだが、mainへマージされるまではレビュー対象とする。
 
-### 3. 主な関数
+### 3. 状態とセッション
 
-現在のコードに存在する主な関数は次の通り。
+`HOME`, `RULE`, `READY`, `PLAYING`, `RESULT`, `ERROR`を使用する。
 
-- `setupCanvasResolution()`: Canvas内部解像度を端末の `devicePixelRatio` に合わせる。
-- `makeStage(name, shortName, variant)`: 共通構造を基にステージ差分を生成する。
-- `validateStageGoalAccess(stage)` / `validateAllStages()`: ステージのゴール付近を検査する。
-- `setState(next)`: 画面状態を切り替える。
-- `canvasPoint(e)`: 入力座標を320×480の論理座標へ変換する。
-- `screenToWorld(p)`: 画面座標を `cameraY` 加算後の世界座標へ変換する。
-- `updateCameraFromScrollbar(screenY)`: 左スクロールバー操作で `cameraY` を更新する。
-- `resetGame()`: ステージ、砂、🚬、スコア、フラグを初期化する。
-- `buildStage()`: `STAGES[Math.floor(Math.random() * STAGES.length)]` でステージを選び、砂・壁・仕掛け・トラップ・ゴールを配置する。
-- `beginReadySequence()` / `startReadyCountdown()` / `startGame()`: リセット、カウントダウン、PLAYING開始を行う。
-- `startSessionClock()` / `syncRemainingTime()`: `performance.now()` と `Date.now()` の期限から残り時間を同期する。
-- `carveEllipse(cx, cy, rx, ry, silent)` / `carveSandAt(x, y)` / `carveLine(a, b)`: 砂削りを行う。
-- `settleSandAround(cx, cy, radius)`: 削った周辺の砂だけを局所的に崩落させる。
-- `solidAt(px, py)`: 世界座標が砂・壁・範囲外かを判定する。
-- `updateCigarettes(dt)`: 🚬の移動、衝突、ゴール、トラップ、消失、停止時間を更新する。
-- `updateMechanisms(dt)`: バー、ゲート、ローターを更新する。
-- `applySlopeRoll(cig, cfg, dt)`: 接地時に斜面方向へ加速する。
-- `resolveCollisions(cig, cfg, dt)`: 砂、壁、仕掛けとの当たり判定を処理する。
-- `checkGoalAndTraps(cig)`: ゴール到達とトラップ消失を判定する。
-- `checkBottomLost(cig, dt)`: 最下部やゴール下に落ちた🚬の消失を判定する。
-- `updateStuckState(cig, dt)`: 停止時間を計測する。
-- `deliverCig(cig)` / `loseCig(cig)`: 到達・喪失を確定する。
-- `checkAllCigarettesResolved(nowPerf)`: activeな🚬の状態、成功不能、ゴール下、進展なしから早期終了を判定する。
-- `draw()` と各 `draw*()` 関数: Canvasを描画する。
-- `updateParticles(dt)`: パーティクルを更新する。
-- `updateHud(force)`: HUDを更新する。
-- `finishGame(reason, endCause)`: `resultFinalized` で二重確定を防ぎ、結果、`endCause`、`playId`、スコア、ランキング通信開始を一度だけ確定する。
-- `calculateBreakdown(reason)`: スコア内訳を計算する。
-- `submitScoreOnce(result)`: `playId` ごとに `submit_score` RPCへ終了時1回だけ送信する。
-- `fetchRankingData()`: `get_best_score_ranking` RPCでランキング配列を取得する。
-- `renderRankingRows(rows)`: 取得済みランキング配列を結果画面へ描画する。
-- `runResultNetwork(result, resultRequestId)`: 送信と取得を分離し、古い結果通信がDOMを書き換えないよう確認しながら実行する。
-- `shareText(text)`: Web Share APIまたはクリップボードでシェアする。
-- `gameLoop(ts)`: `updateMechanisms`、`updateCigarettes`、`checkAllCigarettesResolved`、`updateParticles`、`updateHud`、`draw` の順でPLAYING中の処理を進める。
-- `ensureLoop()` / `stopLoop()`: requestAnimationFrameの開始・停止を行う。
+- READY: 3、2、1。タイマー・物理は進めない
+- PLAYING: 絶対期限タイマー、固定間隔物理、入力、判定を進める
+- pendingClear: 結果を固定し、物理を停止して成功演出だけ描画
+- RESULT: `stopLoop()`で処理停止
 
-### 4. 砂
+`playId`, `resultRequestId`, `resultFinalized`, `endCause`で1プレイの終了と通信を一度だけ確定する。
 
-砂は通常フレームでは静止し、プレイヤーが削った周辺だけ `settleSandAround()` で局所的に崩落する。真下が空なら下へ、真下が埋まっていて斜め下へ移動できる場合は斜めへ崩す。世界全体の砂を毎フレーム動かす方式ではない。
+### 4. 主要定数
 
-### 5. 🚬の物理
+```js
+const PHYSICS_DT = 1 / 120;
+const MAX_PHYSICS_STEPS = 6;
+const MAX_ACCUMULATED_TIME = PHYSICS_DT * MAX_PHYSICS_STEPS;
+const BALL_RADIUS = 8;
+const BALL_DRAW_RADIUS = 9;
+const BALL_SHADOW_RADIUS = 10;
+const BALL_MAX_SPEED = 900;
+```
 
-現在は重力、横方向の減速、砂・壁・仕掛けとの当たり判定、接地時の小さい上下速度の停止、斜面方向への加速、表示回転、着地時の軽い潰れ表現、ローターからの力、最下部消失、停止時間計測を実装している。
+### 5. 主要関数
 
-未実装のものは、🚬同士の衝突、固定時間更新、休止状態、複数点を使った精密な円と地形の接触判定、物理半径と描画半径の統一である。
+#### 初期化・画面・入力
 
-### 6. ステージ
+- `setupCanvasResolution()`
+- `setState(next)`
+- `canvasPoint(e)`
+- `screenToWorld(p)`
+- `updateCameraFromScrollbar(screenY)`
+- `beginInput(e)` / `moveInput(e)` / `endInput(e)`
+- `resetGame()` / `beginReadySequence()` / `startReadyCountdown()` / `startGame()`
+- `startSessionClock()` / `syncRemainingTime()`
 
-現在は `makeStage(name, shortName, variant)` による共通生成型。共通の砂、壁、導線を基に、`variant` でゴール位置、危険側、一部の壁、トラップ位置、バー位置と速度、ローターの有無を変える。
+#### ステージ・砂
 
-ステージ選択はランダムで、同じステージが連続する可能性がある。10回で10種類が一巡する保証はない。
+- `makeStage(name, shortName, variant)`
+- `validateStageGoalAccess(stage)` / `validateAllStages()`
+- `buildStage()`
+- `carveEllipse()` / `carveSandAt()` / `carveLine()`
+- `settleSandAround()`
+- `wakeCigarettesNear()`
 
-### 7. ランキング・通信
+#### PR3物理
 
-- Supabase URL: `https://mlpnjgezrnhdxsxolyzj.supabase.co`
-- key: Publishable keyのみ
-- 送信RPC: `submit_score`
-- 取得RPC: `get_best_score_ranking`
-- game_slug: `tabakon`
-- 通信制限時間: 8秒
-- 送信回数: `playId` ごとにゲーム終了時1回
+- `physicsStep(dt)`: 1回の固定物理更新
+- `moveCigarette(cig, cfg, dt)`: 重力、分割移動、地形/仕掛け衝突
+- `findDeepestTerrainOverlap(cig)`: 円と地形セルの最深食い込みを取得
+- `resolveTerrainCollisions(cig, cfg)`: 位置補正と反発
+- `resolveMechanismCollisions(cig, cfg, dt, previousY)`: バー、ゲート、ローター
+- `resolveBallPair(a, b)`: 2個の🚬の位置・速度・摩擦を解決
+- `resolveBallCollisions()`: active全組を2回解決
+- `updateSleepState(cig, dt, mechanismContact)`: 休止判定
+- `wakeCigarette(cig)`: 復帰
+- `clampBallSpeed(cig)`: 900px/秒上限
+- `updateCigarettes(dt)`
+- `updateMechanisms(dt)`
 
-### 8. デバッグ
+#### 終了・結果・通信
 
-現在は `window.tabakonDebug` が通常公開時にも作られる。`validateAllStages()` は読み込み時に実行される。
+- `checkGoalAndTraps(cig, dt)`
+- `checkBottomLost(cig, dt)`
+- `updateStuckState(cig, dt)`
+- `deliverCig(cig)` / `loseCig(cig)`
+- `checkAllCigarettesResolved(nowPerf)`
+- `finishGame(reason, endCause)`
+- `submitScoreOnce(result)`
+- `fetchRankingData()` / `renderRankingRows(rows)` / `runResultNetwork()`
 
-### 9. PR2で実装済みのセッション管理
+#### 描画・ループ
 
-PR2では `playId`、`resultRequestId`、`resultFinalized`、`endCause` を使い、1プレイの時間、終了、結果画面、ランキング通信を一度だけ完了させる。20個到達時は結果を固定し、送信失敗時もランキング取得を試す。
+- `draw()` と各`draw*()`関数
+- `updateParticles(dt)`
+- `updateHud()`
+- `gameLoop(ts)`
+- `ensureLoop()` / `stopLoop()`
+
+### 6. 固定間隔物理の処理順
+
+```text
+requestAnimationFrame
+→ 絶対期限タイマー同期
+→ frameDtを物理蓄積値へ追加（最大0.05秒）
+→ 1/120秒単位で最大6回:
+   仕掛け更新
+   各🚬の分割移動・地形/仕掛け衝突
+   🚬同士の全組衝突を2反復
+   ゴール・トラップ・最下部・休止判定
+   終了判定
+→ パーティクル
+→ HUD
+→ 描画
+```
+
+成功演出中は物理蓄積値を0へ戻し、結果へ影響する更新をしない。
+
+### 7. ボール衝突
+
+- 物理半径8px、描画半径9px、影10px
+- 初期配置間隔17px
+- 球種質量: normal 1.00 / red 1.25 / blue 0.80 / black 1.10
+- 位置補正率0.8、許容重なり0.1px
+- 接近中だけ反発
+- 接線摩擦0.08相当
+- 全組を2回解決
+- 同一座標はID由来の固定方向で分離
+
+### 8. 休止・復帰
+
+接地・仕掛け非接触・速度3px/秒未満が0.6秒続くと休止する。砂削り、他球衝突、仕掛け接触、支持消失で復帰する。
+
+### 9. PR3で変更していない範囲
+
+- 地形グリッドサイズ
+- ステージ定義と選択方式
+- 砂崩れルール
+- 成功条件
+- 制限時間
+- スコア式
+- Supabase URL / key / RPC / payload
+- ランキング型
+- 画面デザイン
 
 ## 第2部：今後の改修予定
 
-以下は未実装の予定であり、現在の実装済み仕様ではない。
+### PR4: 砂の細分化と地形描画の軽量化
 
-### PR2：タイマー、終了判定、非同期通信（実装済み）
+- 48×144と64×192候補の性能比較
+- `sandGrid`と`wallGrid`の分離
+- 砂が🚬、ゴール、仕掛け、最下部帯へ入り込むことの防止
+- 変更範囲だけの地形再描画
+- スワイプ1回につき砂崩れ1回
 
-- `delivered + activeCount < NEED` の確定失敗判定を実装済み。
-- プレイヤーの最後の砂削り時刻を含めた停止判定を実装済み。
-- 一時停止を詰みと誤認しない判定を実装済み。
-- ランキング通信と結果表示の失敗時挙動の整理を実装済み。
+### PR5: 10ステージ一巡・個別化・公平性
 
-### PR3：固定時間更新、🚬同士の衝突、判定半径
+- 10個を一巡するまで重複しないstage bag
+- 10ステージの個別データ化
+- 固定壁・通路幅・安全導線の自動検査
+- ステージ別成功率とスコア中央値の測定
 
-- 固定時間方式の物理更新。
-- 🚬同士の衝突。
-- 休止状態。
-- 物理半径と描画半径の統一。
-- 複数点を使った精密な円と地形の接触判定。
+### PR6: UI・操作説明・アクセシビリティ
 
-### PR4：砂の細分化と地形描画の軽量化
+- スクロールバーの描画幅とタッチ幅を分離
+- 画面外🚬の分布、active数、失敗理由
+- 初回チュートリアル
+- 結果画面のホームボタン
+- シェア成功/失敗通知
+- 色以外の球種識別
 
-- 砂解像度の見直し。
-- より細かい砂表現。
-- 表示範囲に応じた描画最適化。
+### PR7: デバッグ・自動検査・長時間試験
 
-### PR5：ステージ一巡方式と個別化
+- `?debug=1`時だけdebug API公開
+- FPS、固定物理更新回数、sleeping数、座標異常を表示
+- 構文・契約・ステージ・性能検査
+- 長時間・連続プレイ試験
 
-- 10回で10ステージを一巡する選択方式。
-- URLによるステージ指定。
-- ステージごとの地形と安全導線の個別化。
+### PR8: 公開準備
 
-### PR6：HUD、説明、失敗理由、操作補助
-
-- HUD改善。
-- ルール説明の整理。
-- 失敗理由の表示。
-- 操作補助表示の追加。
-
-### PR7：デバッグ、検査、公開整備
-
-- `?debug=1` の場合だけ `window.tabakonDebug` を公開する。
-- 公開前検査の自動化。
-- レビュー用チェック項目の更新。
+- Supabase実疎通
+- Codeberg Pages
+- 実験場トップ/詳細ランキング
+- GitHubとCodebergの内容一致
+- 公開後スモークテストとロールバック基準
