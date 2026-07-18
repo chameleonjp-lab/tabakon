@@ -1,0 +1,33 @@
+name: Apply stage1 spawn clearance
+
+on:
+  push:
+    branches:
+      - feat/tabakon-p0c-stage1-strategy
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[stage1-clearance]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply clearance patch and syntax check
+        run: python3 tools/apply_stage1_spawn_clearance.py
+      - name: Validate and commit
+        run: |
+          git add -A
+          git diff --cached --check
+          test ! -e .github/workflows/apply-stage1-spawn-clearance.yml
+          test ! -e tools/apply_stage1_spawn_clearance.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: validate stage1 spawn clearance [stage1-clearance]"
+          git push
