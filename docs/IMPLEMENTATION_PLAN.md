@@ -1,6 +1,6 @@
 # たばコン 実装計画書
 
-この文書は、現在実装済みの構造と今後の改修予定を分ける。完成までの順序・禁止事項・総合合格条件は`docs/COMPLETION_MASTER_PLAN.md`を正本とする。
+この文書は、現在実装済みの構造、実機で判明したブロッカー、次に行う作業を分けて記録する。完成までの固定契約は`docs/COMPLETION_MASTER_PLAN.md`を参照するが、実機評価で不合格になった項目は本書のP0判定を優先する。
 
 ## 第1部：現在の実装構造
 
@@ -13,19 +13,34 @@
 - 🚬: 30個
 - 成功: 20個
 - 制限時間: 60秒
-- 左スクロールバー: 24px
+- 左スクロールバー表示幅: 24px
 - 全10ステージ共通ランキング
 
-### 2. 完了段階
+### 2. 完了済み
 
-- PR1: 文書と現行実装の整合
-- PR2: 絶対期限タイマー、結果固定、終了判定、通信競合対策
+- PR1: 文書と実装の整合
+- PR2: 絶対期限タイマー、20個到達時の結果固定、終了判定、通信競合対策
 - PR2追補: 成功演出中の描画継続
-- PR3: 固定間隔物理、半径統一、🚬同士の衝突、休止/復帰、すり抜け防止、バー/ローター接触安定化
 
-PR3はこのブランチで実装済みだが、mainへマージされるまではレビュー対象とする。
+### 3. PR #24の状態
 
-### 3. 状態とセッション
+PR #24はDraftかつBLOCKED。固定間隔物理、半径統一、🚬同士の衝突、休止/復帰、すり抜け防止を実装したが、実機で平面振動が確認されたため完了扱いにしない。
+
+平面振動に対する候補修正として、次をPR #24へ追加済み。
+
+- 地形接触を単一の最深セルではなく、全接触セルの重み付き法線合成へ変更
+- 接地法線を連続フレームで平滑化
+- 地形への法線速度が36px/秒未満なら反発係数を0
+- 平面の横速度が12px/秒以下なら静止摩擦で0へ吸着
+- 平面でゴール方向へ動かす人工ナッジを廃止
+- ボール同士の相対速度が18px/秒未満なら反発係数を0
+- 重なり量だけでは休止中の🚬を起こさない
+- 相対速度8px/秒以上または衝撃量12以上でのみ衝突復帰
+- 平面接地が0.18秒安定し、4px/秒未満が0.35秒続いた場合に休止
+
+実機で振動が止まったことを確認するまで、Ready化・マージ・ステージ改修開始を禁止する。
+
+### 4. 状態とセッション
 
 `HOME`, `RULE`, `READY`, `PLAYING`, `RESULT`, `ERROR`を使用する。
 
@@ -36,7 +51,7 @@ PR3はこのブランチで実装済みだが、mainへマージされるまで�
 
 `playId`, `resultRequestId`, `resultFinalized`, `endCause`で1プレイの終了と通信を一度だけ確定する。
 
-### 4. 主要定数
+### 5. 主要物理定数
 
 ```js
 const PHYSICS_DT = 1 / 120;
@@ -46,19 +61,29 @@ const BALL_RADIUS = 8;
 const BALL_DRAW_RADIUS = 9;
 const BALL_SHADOW_RADIUS = 10;
 const BALL_MAX_SPEED = 900;
+const TERRAIN_BOUNCE_MIN_SPEED = 36;
+const BALL_BOUNCE_MIN_SPEED = 18;
+const GROUND_STOP_SPEED = 22;
+const STATIC_FRICTION_SPEED = 12;
+const FLAT_GROUND_NORMAL_X = 0.12;
+const GROUND_NORMAL_BLEND = 0.24;
+const GROUND_STABLE_DELAY = 0.18;
+const SLEEP_SPEED = 4;
+const SLEEP_DELAY = 0.35;
+const WAKE_RELATIVE_SPEED = 8;
+const WAKE_IMPULSE = 12;
 ```
 
-### 5. 主要関数
+### 6. 主要関数
 
-#### 初期化・画面・入力
+#### 初期化・入力・セッション
 
 - `setupCanvasResolution()`
 - `setState(next)`
-- `canvasPoint(e)`
-- `screenToWorld(p)`
+- `canvasPoint(e)` / `screenToWorld(p)`
 - `updateCameraFromScrollbar(screenY)`
 - `beginInput(e)` / `moveInput(e)` / `endInput(e)`
-- `resetGame()` / `beginReadySequence()` / `startReadyCountdown()` / `startGame()`
+- `resetGame()` / `beginReadySequence()` / `startGame()`
 - `startSessionClock()` / `syncRemainingTime()`
 
 #### ステージ・砂
@@ -73,17 +98,18 @@ const BALL_MAX_SPEED = 900;
 #### PR3物理
 
 - `physicsStep(dt)`: 1回の固定物理更新
-- `moveCigarette(cig, cfg, dt)`: 重力、分割移動、地形/仕掛け衝突
-- `findDeepestTerrainOverlap(cig)`: 円と地形セルの最深食い込みを取得
-- `resolveTerrainCollisions(cig, cfg)`: 位置補正と反発
-- `resolveMechanismCollisions(cig, cfg, dt, previousY)`: バー、ゲート、ローター
-- `resolveBallPair(a, b)`: 2個の🚬の位置・速度・摩擦を解決
-- `resolveBallCollisions()`: active全組を2回解決
-- `updateSleepState(cig, dt, mechanismContact)`: 休止判定
-- `wakeCigarette(cig)`: 復帰
-- `clampBallSpeed(cig)`: 900px/秒上限
-- `updateCigarettes(dt)`
-- `updateMechanisms(dt)`
+- `moveCigarette(cig, cfg, dt)`: 重力、分割移動、接触処理
+- `findTerrainManifold(cig)`: 全接触セルから合成法線と最大食い込みを取得
+- `resolveTerrainCollisions(cig, cfg)`: 低速反発停止、位置補正、接地法線取得
+- `updateGroundContact(cig, contact, dt)`: 接地法線平滑化と安定接地時間
+- `applyGroundResponse(cig, cfg, dt)`: 平面静止摩擦と斜面重力投影
+- `hasTerrainSupport(cig)`: 休止中の下側支持確認
+- `resolveMechanismCollisions(cig, cfg, dt, previousY)`
+- `resolveBallPair(a, b)`: 位置、低速非反発、摩擦、衝撃時復帰
+- `resolveBallCollisions()`
+- `updateSleepState(cig, dt, mechanismContact)`
+- `wakeCigarette(cig)`
+- `clampBallSpeed(cig)`
 
 #### 終了・結果・通信
 
@@ -94,17 +120,9 @@ const BALL_MAX_SPEED = 900;
 - `checkAllCigarettesResolved(nowPerf)`
 - `finishGame(reason, endCause)`
 - `submitScoreOnce(result)`
-- `fetchRankingData()` / `renderRankingRows(rows)` / `runResultNetwork()`
+- `fetchRankingData()` / `renderRankingRows()` / `runResultNetwork()`
 
-#### 描画・ループ
-
-- `draw()` と各`draw*()`関数
-- `updateParticles(dt)`
-- `updateHud()`
-- `gameLoop(ts)`
-- `ensureLoop()` / `stopLoop()`
-
-### 6. 固定間隔物理の処理順
+### 7. 固定間隔物理の処理順
 
 ```text
 requestAnimationFrame
@@ -112,7 +130,9 @@ requestAnimationFrame
 → frameDtを物理蓄積値へ追加（最大0.05秒）
 → 1/120秒単位で最大6回:
    仕掛け更新
-   各🚬の分割移動・地形/仕掛け衝突
+   各🚬の分割移動
+   地形接触法線の合成・平滑化
+   平面静止摩擦 / 斜面重力投影
    🚬同士の全組衝突を2反復
    ゴール・トラップ・最下部・休止判定
    終了判定
@@ -121,72 +141,79 @@ requestAnimationFrame
 → 描画
 ```
 
-成功演出中は物理蓄積値を0へ戻し、結果へ影響する更新をしない。
+成功演出中は物理蓄積値を0へ戻し、結果へ影響する更新を行わない。
 
-### 7. ボール衝突
-
-- 物理半径8px、描画半径9px、影10px
-- 初期配置間隔17px
-- 球種質量: normal 1.00 / red 1.25 / blue 0.80 / black 1.10
-- 位置補正率0.8、許容重なり0.1px
-- 接近中だけ反発
-- 接線摩擦0.08相当
-- 全組を2回解決
-- 同一座標はID由来の固定方向で分離
-
-### 8. 休止・復帰
-
-接地・仕掛け非接触・速度3px/秒未満が0.6秒続くと休止する。砂削り、他球衝突、仕掛け接触、支持消失で復帰する。
-
-### 9. PR3で変更していない範囲
+### 8. PR3で変更していない範囲
 
 - 地形グリッドサイズ
 - ステージ定義と選択方式
+- 掘削半径20px
 - 砂崩れルール
 - 成功条件
 - 制限時間
 - スコア式
 - Supabase URL / key / RPC / payload
 - ランキング型
-- 画面デザイン
+- スクロールバーの見た目とタッチ幅
 
-## 第2部：今後の改修予定
+## 第2部：実機評価で追加されたP0課題
 
-### PR4: 砂の細分化と地形描画の軽量化
+### P0-A 平面振動
 
-- 48×144と64×192候補の性能比較
-- `sandGrid`と`wallGrid`の分離
-- 砂が🚬、ゴール、仕掛け、最下部帯へ入り込むことの防止
-- 変更範囲だけの地形再描画
-- スワイプ1回につき砂崩れ1回
+候補修正を実装済み。次の実機確認で合否を決める。
 
-### PR5: 10ステージ一巡・個別化・公平性
+- 砂または固定壁の水平面へ1個置く
+- 5秒以上観察する
+- 中心位置の目視振動が1px未満
+- 速度0へ収束し、休止状態になる
+- 30個が積み重なった時も、下層が起き続けない
 
-- 10個を一巡するまで重複しないstage bag
-- 10ステージの個別データ化
-- 固定壁・通路幅・安全導線の自動検査
-- ステージ別成功率とスコア中央値の測定
+不合格なら、追加機能へ進まず同PR内で再修正する。
 
-### PR6: UI・操作説明・アクセシビリティ
+### P0-B 掘削幅
 
-- スクロールバーの描画幅とタッチ幅を分離
-- 画面外🚬の分布、active数、失敗理由
-- 初回チュートリアル
-- 結果画面のホームボタン
-- シェア成功/失敗通知
-- 色以外の球種識別
+現在の`carveEllipse(x, y, 20, 20)`は広すぎる。平面振動合格後、通常ブラシ半径10〜12pxを比較し、補間間隔をブラシ半径の約半分へ変更する。
 
-### PR7: デバッグ・自動検査・長時間試験
+砂崩れは補間点ごとではなく、入力ストロークの変更範囲へまとめて1回実行する。砂の細分化と同時に検証する。
 
-- `?debug=1`時だけdebug API公開
-- FPS、固定物理更新回数、sleeping数、座標異常を表示
-- 構文・契約・ステージ・性能検査
-- 長時間・連続プレイ試験
+### P0-C コアゲーム性
 
-### PR8: 公開準備
+現状は中央を縦に掘るだけでクリアできるため、10ステージの調整ではなくゲーム構造から再設計する。
 
-- Supabase実疎通
-- Codeberg Pages
-- 実験場トップ/詳細ランキング
-- GitHubとCodebergの内容一致
-- 公開後スモークテストとロールバック基準
+1. 3クラスタを独立した初期室へ分割
+2. 1室の10個だけでは成功できない構造を維持
+3. 中央一直線ルートを固定壁と左右へずれた開口で遮断
+4. 上層・中上層・中下層・下層に最低1つずつ役割を置く
+5. 安全路、短距離危険路、高得点路を分離
+6. 色別🚬の初期配置をルート選択へ結び付ける
+7. ステージ1だけを先行完成
+8. ステージ1の実機合格後に残り9ステージを個別定義
+
+### P0-D スクロールUI
+
+- 描画幅24pxとタッチ判定幅40pxを分離
+- ▲/▼をボタン形状として描画
+- 現在表示範囲を明示的な長い窓で表示
+- 画面外🚬の方向を上/下矢印で表示
+- 初回プレイだけ盤面上に操作案内
+
+## 第3部：改訂後の作業順
+
+1. **PR #24内: 平面振動の実機合格**
+2. **掘削精密化＋砂細分化の比較試作**
+3. **ステージ1のコアゲーム性再設計**
+4. **スクロールUIと初回説明**
+5. **残り9ステージの個別化と10ステージ一巡方式**
+6. **ステージ別成功率・スコア中央値による公平性調整**
+7. **デバッグ、自動検査、長時間試験**
+8. **Supabase実疎通、Codeberg、実験場を含む公開準備**
+
+前段が実機合格するまで後段へ進まない。
+
+## 第4部：次回の判断
+
+現在の次の判断は一つだけ。
+
+> コミット`0a2735899b5428786ab2f3f70d9490fc97466650`で、平面振動が実機上で止まったか。
+
+合格の場合のみ、掘削幅と砂細分化の比較試作へ進む。不合格の場合はPR #24内で再度物理を修正する。
