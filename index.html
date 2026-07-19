@@ -32,7 +32,7 @@
 
     <section id="ruleScreen" class="screen card">
       <h2>ルール</h2>
-      <ul class="rule-list"><li>指で砂を削り、道を作ります。</li><li>ステージは縦に長く、左のバーで上や下を見られます。</li><li>砂を削りながら画面を動かして、🚬を🦊へ届けましょう。</li><li>30個の🚬を🦊へ届けます。20個届ければ成功です。</li><li>60秒以内に高スコアを狙います。</li><li>ステージは10種類から開始ごとにランダムで選ばれます。</li></ul><h3>🚬の種類</h3><div class="type-list"><div class="type-card"><b>白っぽい🚬：1000点</b><br>標準の動き。まずはこれを🦊へ届けよう。</div><div class="type-card"><b>赤い🚬：1500点</b><br>重くて落ちやすいが、横に転がりにくい。</div><div class="type-card"><b>青い🚬：1300点</b><br>軽くて跳ねやすい。バーや回転障害物で動きやすい。</div><div class="type-card"><b>黒い🚬：1700点</b><br>高得点。ただし危険ゾーンに近づくと失いやすい。</div></div><div class="danger-note">危険ゾーンに🚬が入ると失います。黒い🚬は危険ゾーンに近いだけでも失いやすいので注意。</div>
+      <ul class="rule-list"><li>指で砂を削り、道を作ります。</li><li>ステージは縦に長く、左のバーで上や下を見られます。</li><li>砂を削りながら画面を動かして、🚬を🦊へ届けましょう。</li><li>30個の🚬を🦊へ届けます。20個届ければ成功です。</li><li>60秒以内に高スコアを狙います。</li><li>ステージ1では3つの室から最低2室を開放し、中層で左右へ振ってから中央へ戻します。</li><li>ステージは10種類から開始ごとにランダムで選ばれます。</li></ul><h3>🚬の種類</h3><div class="type-list"><div class="type-card"><b>白っぽい🚬：1000点</b><br>標準の動き。まずはこれを🦊へ届けよう。</div><div class="type-card"><b>赤い🚬：1500点</b><br>重くて落ちやすいが、横に転がりにくい。</div><div class="type-card"><b>青い🚬：1300点</b><br>軽くて跳ねやすい。バーや回転障害物で動きやすい。</div><div class="type-card"><b>黒い🚬：1700点</b><br>高得点。ただし危険ゾーンに近づくと失いやすい。</div></div><div class="danger-note">危険ゾーンに🚬が入ると失います。黒い🚬は危険ゾーンに近いだけでも失いやすいので注意。</div>
       <button id="backHomeBtn" class="btn secondary">戻る</button>
     </section>
 
@@ -84,6 +84,8 @@
     blue: { score: 1300, ring: '#3295ff', fill: '#e2f2ff', gravity: 820, bounce: 0.42, roll: 1.015, barKick: 1.45, nearTrap: 0, mass: 0.80 },
     black: { score: 1700, ring: '#161018', fill: '#e3dbe8', gravity: 930, bounce: 0.20, roll: 0.98, barKick: 1.15, nearTrap: 12, mass: 1.10 }
   };
+  const DEFAULT_TYPE_PLAN = ['normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','red','blue','normal','red','blue','normal','red','blue','normal','black','normal','red','blue','normal','red','blue','normal','black','normal','black'];
+  const STAGE1_TYPE_PLAN = ['normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','red','blue','red','blue','red','blue','red','blue','red','blue','black','red','black','red','blue','black','red','black','red','blue'];
   const BAD_COMMENT = 'ｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀﾈｯﾄﾔﾒﾛｲﾝﾀｰﾈｯﾄﾊｱｸﾀﾞｲﾝﾀｰﾈｯﾄﾊﾊﾞｶﾆﾅﾙｲﾝﾀｰﾈｯﾄﾊﾉｳｦｵｾﾝｽﾙｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀｰﾈｯﾄﾔﾒﾛｲﾝﾀ...';
   const STUCK_ARM_MS = 2000;
   const NO_PROGRESS_END_MS = 8000;
@@ -144,12 +146,70 @@
   const cellCenterY = cellY => cellY * CELL_H + CELL_H / 2;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-  // 4. ステージ定義（配置はP0-Cで再設計）
+  // 4. ステージ定義（P0-C: ステージ1のみ個別再設計）
   const COMMON_WALLS = [
     { kind: 'wall', x: 0, y: 0, w: 2, h: 144 },
     { kind: 'wall', x: 46, y: 0, w: 2, h: 144 },
     { kind: 'wall', x: 0, y: 142, w: 48, h: 2 }
   ];
+  function makeStageOne() {
+    return {
+      id: 'stage1-strategy', strategy: true,
+      name: 'ステージ1：三室の選択', shortName: '三室の選択',
+      strategyHint: '2室以上を開けよう　左=安全 / 中央=速攻 / 右=高得点',
+      spawnClusters: [{ x: 64, y: 48 }, { x: 166.67, y: 48 }, { x: 264, y: 48 }],
+      spawnSpacing: 16,
+      typePlan: [...STAGE1_TYPE_PLAN],
+      rects: [
+        ...COMMON_WALLS,
+        { kind: 'wall', x: 17, y: 0, w: 2, h: 36 },
+        { kind: 'wall', x: 31, y: 0, w: 2, h: 36 },
+        { kind: 'sand', x: 2, y: 12, w: 15, h: 22 },
+        { kind: 'sand', x: 19, y: 12, w: 12, h: 22 },
+        { kind: 'sand', x: 33, y: 12, w: 13, h: 22 },
+        { kind: 'wall', x: 2, y: 34, w: 4, h: 2 },
+        { kind: 'wall', x: 11, y: 34, w: 14, h: 2 },
+        { kind: 'wall', x: 30, y: 34, w: 8, h: 2 },
+        { kind: 'wall', x: 43, y: 34, w: 3, h: 2 },
+        { kind: 'sand', x: 2, y: 36, w: 44, h: 30 },
+        { kind: 'wall', x: 2, y: 66, w: 6, h: 2 },
+        { kind: 'wall', x: 14, y: 66, w: 20, h: 2 },
+        { kind: 'wall', x: 40, y: 66, w: 6, h: 2 },
+        { kind: 'sand', x: 2, y: 68, w: 44, h: 34 },
+        { kind: 'wall', x: 2, y: 102, w: 19, h: 2 },
+        { kind: 'wall', x: 27, y: 102, w: 19, h: 2 },
+        { kind: 'sand', x: 2, y: 104, w: 44, h: 28 }
+      ],
+      carves: [
+        { x: 8, y: 27, rx: 28, ry: 48 },
+        { x: 27, y: 27, rx: 18, ry: 48 },
+        { x: 40, y: 27, rx: 28, ry: 48 },
+        { x: 9, y: 51, rx: 32, ry: 72 },
+        { x: 26, y: 51, rx: 22, ry: 66 },
+        { x: 39, y: 51, rx: 30, ry: 72 },
+        { x: 11, y: 85, rx: 38, ry: 82 },
+        { x: 37, y: 85, rx: 38, ry: 82 },
+        { x: 24, y: 119, rx: 50, ry: 86 }
+      ],
+      traps: [
+        { x: 260, y: 305, w: 38, h: 30, type: 'danger' },
+        { x: 268, y: 548, w: 34, h: 34, type: 'swamp' }
+      ],
+      mechanisms: [
+        { kind: 'gate', x: 152, y: 300, w: 15, h: 72, t: 0, open: false },
+        { kind: 'bar', x: 44, y: 505, w: 86, h: 10, min: 36, max: 146, speed: 30, dir: 1 },
+        { kind: 'rotor', x: 252, y: 610, len: 66, angle: 0.3, speed: 1.65 }
+      ],
+      goal: { x: 104, y: 840, w: 116, h: 68 },
+      routeHints: [
+        { x: 22, y: 10, w: 84, text: '安全　白', tone: 'safe' },
+        { x: 124, y: 10, w: 84, text: '速攻　赤青', tone: 'fast' },
+        { x: 218, y: 10, w: 88, text: '高得点　黒', tone: 'score' },
+        { x: 96, y: 420, w: 128, text: '← 左か右へ →', tone: 'decision' },
+        { x: 100, y: 676, w: 120, text: '中央へ戻す', tone: 'decision' }
+      ]
+    };
+  }
   function makeStage(name, shortName, variant) {
     const leftGoal = variant % 3 === 0;
     const rightRisk = variant % 2 === 0;
@@ -190,10 +250,10 @@
     if (variant === 4 || variant === 9 || variant === 10) mechanisms.push({ kind: 'rotor', x: 236, y: 610, len: 76, angle: 0.2, speed: 1.8 });
     if (variant === 5 || variant === 10) mechanisms.push({ kind: 'bar', x: 150, y: 678, w: 92, h: 10, min: 108, max: 270, speed: 40, dir: -1 });
     if (variant === 9) mechanisms.push({ kind: 'rotor', x: 150, y: 700, len: 86, angle: -0.3, speed: -1.9 });
-    return { name, shortName, rects, carves, traps, mechanisms, goal: { x: goalX, y: 840, w: leftGoal ? 128 : 116, h: 68 } };
+    return { id: 'legacy-' + variant, name, shortName, rects, carves, traps, mechanisms, goal: { x: goalX, y: 840, w: leftGoal ? 128 : 116, h: 68 } };
   }
   const STAGES = [
-    makeStage('ステージ1：三つ道', '三つ道', 1),
+    makeStageOne(),
     makeStage('ステージ2：左安全路', '左安全路', 2),
     makeStage('ステージ3：中央ゲート', '中央ゲート', 3),
     makeStage('ステージ4：右高得点路', '右高得点路', 4),
@@ -225,12 +285,64 @@
     }
     return warnings;
   }
+  function stageHasWallAt(stage, x, y) {
+    return stage.rects.some(r => r.kind === 'wall' && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
+  }
+  function countTypes(list) {
+    return list.reduce((acc, type) => { acc[type] = (acc[type] || 0) + 1; return acc; }, {});
+  }
+  function stageSpawnPosition(stage, i) {
+    const clusters = stage.spawnClusters || SPAWN_CLUSTERS;
+    const spacing = stage.spawnSpacing || 17;
+    const cluster = clusters[Math.floor(i / 10)];
+    return { x: cluster.x + ((i % 5) - 2) * spacing, y: cluster.y + Math.floor((i % 10) / 5) * spacing };
+  }
+  function spawnIntersectsStageWall(stage, point, radius = BALL_RADIUS) {
+    return stage.rects.some(rect => {
+      if (rect.kind !== 'wall') return false;
+      const world = rectToWorld(rect);
+      const nearestX = clamp(point.x, world.x, world.x + world.w);
+      const nearestY = clamp(point.y, world.y, world.y + world.h);
+      return (point.x - nearestX) ** 2 + (point.y - nearestY) ** 2 < (radius - 0.01) ** 2;
+    });
+  }
+  function validateStageOneStrategy(stage) {
+    if (!stage.strategy) return [];
+    const warnings = [];
+    if (!Array.isArray(stage.typePlan) || stage.typePlan.length !== 30) warnings.push('ステージ1のtypePlanは30件必要');
+    const left = countTypes((stage.typePlan || []).slice(0, 10));
+    const middle = countTypes((stage.typePlan || []).slice(10, 20));
+    const right = countTypes((stage.typePlan || []).slice(20, 30));
+    if (left.normal !== 10) warnings.push('左室は白10個である必要');
+    if (middle.red !== 5 || middle.blue !== 5) warnings.push('中央室は赤5・青5である必要');
+    if (right.black !== 4 || right.red !== 4 || right.blue !== 2) warnings.push('右室は黒4・赤4・青2である必要');
+    if (!stageHasWallAt(stage, 17, 10) || !stageHasWallAt(stage, 31, 10)) warnings.push('上層の室仕切りが不足');
+    if (!stageHasWallAt(stage, 24, 66)) warnings.push('第2障壁の中央が開いている');
+    if (stageHasWallAt(stage, 24, 102)) warnings.push('第3障壁の中央開口が塞がっている');
+    for (const x of [8, 27, 40]) if (stageHasWallAt(stage, x, 34)) warnings.push('第1障壁の室別出口が塞がっている: ' + x);
+    for (const x of [10, 36]) if (stageHasWallAt(stage, x, 66)) warnings.push('第2障壁の左右開口が塞がっている: ' + x);
+    const spawnPoints = Array.from({ length: TOTAL }, (_, i) => stageSpawnPosition(stage, i));
+    for (let i = 0; i < spawnPoints.length; i++) {
+      if (spawnIntersectsStageWall(stage, spawnPoints[i])) warnings.push('初期配置が固定壁へ接触している: ' + i);
+      for (let j = i + 1; j < spawnPoints.length; j++) {
+        if (Math.hypot(spawnPoints[i].x - spawnPoints[j].x, spawnPoints[i].y - spawnPoints[j].y) < BALL_RADIUS * 2 - 0.01) {
+          warnings.push('初期配置が重なっている: ' + i + '/' + j);
+        }
+      }
+    }
+    return warnings;
+  }
   function validateAllStages() {
-    const warnings = STAGES.flatMap(validateStageGoalAccess);
-    if (warnings.length) console.warn('[tabakon] stage goal access warnings', warnings);
+    const warnings = STAGES.flatMap(stage => [...validateStageGoalAccess(stage), ...validateStageOneStrategy(stage)]);
+    if (warnings.length) console.warn('[tabakon] stage warnings', warnings);
     return warnings;
   }
   validateAllStages();
+  function selectStage() {
+    const requested = new URLSearchParams(location.search).get('stage');
+    if (requested === '1') return STAGES[0];
+    return STAGES[Math.floor(Math.random() * STAGES.length)];
+  }
 
   // 5. 状態管理
   let state = STATES.HOME;
@@ -334,7 +446,7 @@
   function cellAt(px, py) { return { x: Math.floor(px / CELL_W), y: Math.floor(py / CELL_H) }; }
   function buildStage() {
     grid.fill(0);
-    currentStage = STAGES[Math.floor(Math.random() * STAGES.length)];
+    currentStage = selectStage();
     for (const rect of currentStage.rects) fillRectCells(rect.x, rect.y, rect.w, rect.h, rect.kind === 'wall' ? 2 : 1);
     for (const carve of currentStage.carves) carveEllipse(cellCenterX(carve.x), cellCenterY(carve.y), carve.rx, carve.ry, true);
     traps = currentStage.traps.map(t => ({ ...t }));
@@ -344,8 +456,7 @@
 
   // 8. 初期化・時計
   function spawnPosition(i) {
-    const cluster = SPAWN_CLUSTERS[Math.floor(i / 10)];
-    return { x: cluster.x + ((i % 5) - 2) * 17, y: cluster.y + Math.floor((i % 10) / 5) * 17 };
+    return stageSpawnPosition(currentStage, i);
   }
   function resetGame() {
     delivered = 0; lost = 0; deliveredScore = 0; remainingMs = LIMIT_MS;
@@ -355,11 +466,11 @@
     deliveredFlash = 0; lostFlash = 0; successFlash = 0; pendingClear = false; cameraY = 0; physicsAccumulator = 0; carveStroke = null;
     buildStage();
     cigarettes = [];
-    const typePlan = ['normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','red','blue','normal','red','blue','normal','red','blue','normal','black','normal','red','blue','normal','red','blue','normal','black','normal','black'];
+    const typePlan = currentStage.typePlan || DEFAULT_TYPE_PLAN;
     for (let i = 0; i < TOTAL; i++) {
       const p = spawnPosition(i);
       cigarettes.push({
-        id: i, x: p.x, y: p.y, vx: (i % 5 - 2) * 5, vy: 0, r: BALL_RADIUS, type: typePlan[i],
+        id: i, room: Math.floor(i / 10), x: p.x, y: p.y, vx: (i % 5 - 2) * 5, vy: 0, r: BALL_RADIUS, type: typePlan[i],
         active: true, delivered: false, lost: false, angle: 0, squash: 0, sink: 0, bottomTimer: 0,
         stuckTimer: 0, lastX: p.x, lastY: p.y, grounded: false, sleeping: false, sleepTimer: 0,
         groundNormalX: 0, groundNormalY: -1, groundContactTime: 0,
@@ -974,7 +1085,7 @@
     sky.addColorStop(0, '#8bd6ff'); sky.addColorStop(1, '#e4fff2');
     ctx.fillStyle = sky; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.save(); ctx.translate(0, -cameraY);
-    drawGrid(); drawBrightMarks(); drawTraps(); drawGoal(); drawMechanisms();
+    drawGrid(); drawRouteHints(); drawBrightMarks(); drawTraps(); drawGoal(); drawMechanisms();
     for (const cig of cigarettes) if (cig.active && isNearView(cig.y, cig.r * 2)) drawCig(cig);
     drawParticles(); ctx.restore(); drawScrollbar();
     if (successFlash > 0) drawSuccessFlash();
@@ -989,6 +1100,33 @@
         ctx.fillStyle = 'rgba(255,238,169,.18)'; ctx.fillRect(gx(x) + 1, gy(y) + 1, 2, 2);
       } else { ctx.fillStyle = '#6d4a2c'; ctx.fillRect(gx(x), gy(y), CELL_W + 0.5, CELL_H + 0.5); }
     }
+  }
+  function drawRouteHints() {
+    const palette = {
+      safe: ['#237b64', '#fff'],
+      fast: ['#21537a', '#fff'],
+      score: ['#6b255f', '#fff'],
+      decision: ['#fff7a8', '#4d321d']
+    };
+    for (const hint of currentStage.routeHints || []) {
+      if (!isNearView(hint.y, 22)) continue;
+      const colors = palette[hint.tone] || palette.decision;
+      ctx.save();
+      ctx.globalAlpha = 0.94;
+      ctx.fillStyle = colors[0];
+      roundRect(hint.x, hint.y, hint.w, 20, 7, true);
+      ctx.strokeStyle = 'rgba(255,255,255,.8)';
+      ctx.lineWidth = 1.5;
+      roundRect(hint.x + 1, hint.y + 1, hint.w - 2, 18, 6, false, true);
+      ctx.fillStyle = colors[1];
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(hint.text, hint.x + hint.w / 2, hint.y + 10);
+      ctx.restore();
+    }
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
   }
   function drawBrightMarks() {
     for (const mark of brightMarks) {
@@ -1068,8 +1206,8 @@
     const sec = Math.max(0, remainingMs / 1000);
     $('timeHud').textContent = '残り ' + (sec > 10 ? Math.ceil(sec) : sec.toFixed(1)); $('timeHud').style.color = sec <= 10 ? '#b53d35' : '';
     $('deliveredHud').textContent = '届けた ' + delivered + '/' + NEED; $('deliveredHud').style.transform = deliveredFlash > 0 ? 'scale(1.08)' : 'scale(1)';
-    $('stageHud').textContent = 'ステージ：' + currentStage.shortName + '　左バーで上下を見る / 砂を削って🚬を🦊へ届けよう';
-    $('statusHud').textContent = '失った ' + lost + '個　危険ゾーンと最下部に注意'; $('statusHud').style.color = lostFlash > 0 ? '#5b1d75' : '';
+    $('stageHud').textContent = 'ステージ：' + currentStage.shortName + '　左バーで上下を見る';
+    $('statusHud').textContent = currentStage.strategyHint || ('失った ' + lost + '個　危険ゾーンと最下部に注意'); $('statusHud').style.color = lostFlash > 0 ? '#5b1d75' : '';
   }
   function calculateBreakdown(reason, fixedRemainingMs = remainingMs) {
     const timeBonus = Math.floor(Math.max(0, fixedRemainingMs) / 10), lostPenalty = lost * 300, retirePenalty = reason === 'retire' ? 5000 : 0;
@@ -1163,8 +1301,9 @@
   // 16. 起動
   window.tabakonDebug = {
     getState: () => state,
+    getStage: () => currentStage.id || currentStage.name,
     getPhysics: () => ({ accumulator: physicsAccumulator, active: cigarettes.filter(c => c.active).length, sleeping: cigarettes.filter(c => c.active && c.sleeping).length }),
-    finishGame, resetGame, showError, validateAllStages, validateStageGoalAccess
+    finishGame, resetGame, showError, validateAllStages, validateStageGoalAccess, validateStageOneStrategy
   };
   function init() {
     try {
