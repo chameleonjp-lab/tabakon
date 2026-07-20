@@ -390,7 +390,8 @@
   validateAllStages();
   function selectStage() {
     const requested = new URLSearchParams(location.search).get('stage');
-    if (requested === '1') return STAGES[0];
+    const stageNumber = Number.parseInt(requested || '', 10);
+    if (Number.isInteger(stageNumber) && stageNumber >= 1 && stageNumber <= STAGES.length) return STAGES[stageNumber - 1];
     return STAGES[Math.floor(Math.random() * STAGES.length)];
   }
 
