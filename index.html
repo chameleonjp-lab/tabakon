@@ -32,7 +32,7 @@
 
     <section id="ruleScreen" class="screen card">
       <h2>ルール</h2>
-      <ul class="rule-list"><li>指で砂を削り、道を作ります。</li><li>ステージは縦に長く、左のバーで上や下を見られます。</li><li>砂を削りながら画面を動かして、🚬を🦊へ届けましょう。</li><li>30個の🚬を🦊へ届けます。20個届ければ成功です。</li><li>60秒以内に高スコアを狙います。</li><li>ステージ1では3つの室から最低2室を開放し、中層で左右へ振ってから中央へ戻します。</li><li>ステージは10種類から開始ごとにランダムで選ばれます。</li></ul><h3>🚬の種類</h3><div class="type-list"><div class="type-card"><b>白っぽい🚬：1000点</b><br>標準の動き。まずはこれを🦊へ届けよう。</div><div class="type-card"><b>赤い🚬：1500点</b><br>重くて落ちやすいが、横に転がりにくい。</div><div class="type-card"><b>青い🚬：1300点</b><br>軽くて跳ねやすい。バーや回転障害物で動きやすい。</div><div class="type-card"><b>黒い🚬：1700点</b><br>高得点。ただし危険ゾーンに近づくと失いやすい。</div></div><div class="danger-note">危険ゾーンに🚬が入ると失います。黒い🚬は危険ゾーンに近いだけでも失いやすいので注意。</div>
+      <ul class="rule-list"><li>指で砂を削り、道を作ります。</li><li>ステージは縦に長く、左のバーで上や下を見られます。</li><li>砂を削りながら画面を動かして、🚬を🦊へ届けましょう。</li><li>30個の🚬を🦊へ届けます。20個届ければ成功です。</li><li>60秒以内に高スコアを狙います。</li><li>狐はステージごとに左端または右端へ現れます。中段の開口とは反対側へ誘導して届けます。</li><li>ステージ1では3つの室から最低2室を開放します。</li><li>ステージは10種類から開始ごとにランダムで選ばれます。</li></ul><h3>🚬の種類</h3><div class="type-list"><div class="type-card"><b>白っぽい🚬：1000点</b><br>標準の動き。まずはこれを🦊へ届けよう。</div><div class="type-card"><b>赤い🚬：1500点</b><br>重くて落ちやすいが、横に転がりにくい。</div><div class="type-card"><b>青い🚬：1300点</b><br>軽くて跳ねやすい。バーや回転障害物で動きやすい。</div><div class="type-card"><b>黒い🚬：1700点</b><br>高得点。ただし危険ゾーンに近づくと失いやすい。</div></div><div class="danger-note">危険ゾーンに🚬が入ると失います。黒い🚬は危険ゾーンに近いだけでも失いやすいので注意。</div>
       <button id="backHomeBtn" class="btn secondary">戻る</button>
     </section>
 
@@ -152,13 +152,32 @@
     { kind: 'wall', x: 46, y: 0, w: 2, h: 144 },
     { kind: 'wall', x: 0, y: 142, w: 48, h: 2 }
   ];
+  function barrierWithOpening(y, openX, openWidth = 8) {
+    const leftWidth = openX - 2;
+    const rightX = openX + openWidth;
+    const rightWidth = 46 - rightX;
+    return [
+      leftWidth > 0 ? { kind: 'wall', x: 2, y, w: leftWidth, h: 2 } : null,
+      rightWidth > 0 ? { kind: 'wall', x: rightX, y, w: rightWidth, h: 2 } : null
+    ].filter(Boolean);
+  }
+  function routeOpenings(goalSide) {
+    return goalSide === 'left'
+      ? { goalSide: 'left', goalX: 28, midOpenX: 34, finalOpenX: 6, openWidth: 8, midY: 68, finalY: 112 }
+      : { goalSide: 'right', goalX: 176, midOpenX: 6, finalOpenX: 34, openWidth: 8, midY: 68, finalY: 112 };
+  }
+  function legacyGoalSide(variant) {
+    return [2, 5, 7, 9].includes(variant) ? 'left' : 'right';
+  }
   function makeStageOne() {
+    const route = { ...routeOpenings('right'), midY: 66, finalY: 102 };
     return {
       id: 'stage1-strategy', strategy: true,
       name: 'ステージ1：三室の選択', shortName: '三室の選択',
-      strategyHint: '2室以上を開けよう　左=安全 / 中央=速攻 / 右=高得点',
+      strategyHint: '2室以上を開け、左へ振ってから右の狐へ',
       spawnClusters: [{ x: 64, y: 48 }, { x: 166.67, y: 48 }, { x: 264, y: 48 }],
       spawnSpacing: 16,
+      routePattern: route,
       typePlan: [...STAGE1_TYPE_PLAN],
       rects: [
         ...COMMON_WALLS,
@@ -172,12 +191,9 @@
         { kind: 'wall', x: 30, y: 34, w: 8, h: 2 },
         { kind: 'wall', x: 43, y: 34, w: 3, h: 2 },
         { kind: 'sand', x: 2, y: 36, w: 44, h: 30 },
-        { kind: 'wall', x: 2, y: 66, w: 6, h: 2 },
-        { kind: 'wall', x: 14, y: 66, w: 20, h: 2 },
-        { kind: 'wall', x: 40, y: 66, w: 6, h: 2 },
+        ...barrierWithOpening(route.midY, route.midOpenX, route.openWidth),
         { kind: 'sand', x: 2, y: 68, w: 44, h: 34 },
-        { kind: 'wall', x: 2, y: 102, w: 19, h: 2 },
-        { kind: 'wall', x: 27, y: 102, w: 19, h: 2 },
+        ...barrierWithOpening(route.finalY, route.finalOpenX, route.openWidth),
         { kind: 'sand', x: 2, y: 104, w: 44, h: 28 }
       ],
       carves: [
@@ -189,7 +205,7 @@
         { x: 39, y: 51, rx: 30, ry: 72 },
         { x: 11, y: 85, rx: 38, ry: 82 },
         { x: 37, y: 85, rx: 38, ry: 82 },
-        { x: 24, y: 119, rx: 50, ry: 86 }
+        { x: route.finalOpenX + route.openWidth / 2, y: 119, rx: 42, ry: 86 }
       ],
       traps: [
         { x: 260, y: 305, w: 38, h: 30, type: 'danger' },
@@ -200,20 +216,20 @@
         { kind: 'bar', x: 44, y: 505, w: 86, h: 10, min: 36, max: 146, speed: 30, dir: 1 },
         { kind: 'rotor', x: 252, y: 610, len: 66, angle: 0.3, speed: 1.65 }
       ],
-      goal: { x: 104, y: 840, w: 116, h: 68 },
+      goal: { x: route.goalX, y: 840, w: 116, h: 68 },
       routeHints: [
         { x: 22, y: 10, w: 84, text: '安全　白', tone: 'safe' },
         { x: 124, y: 10, w: 84, text: '速攻　赤青', tone: 'fast' },
         { x: 218, y: 10, w: 88, text: '高得点　黒', tone: 'score' },
-        { x: 96, y: 420, w: 128, text: '← 左か右へ →', tone: 'decision' },
-        { x: 100, y: 676, w: 120, text: '中央へ戻す', tone: 'decision' }
+        { x: 20, y: 420, w: 110, text: '← まず左へ', tone: 'decision' },
+        { x: 188, y: 676, w: 112, text: '右の狐へ →', tone: 'decision' }
       ]
     };
   }
   function makeStage(name, shortName, variant) {
-    const leftGoal = variant % 3 === 0;
+    const route = routeOpenings(legacyGoalSide(variant));
     const rightRisk = variant % 2 === 0;
-    const goalX = leftGoal ? 92 : variant % 3 === 1 ? 104 : 124;
+    const goalX = route.goalX;
     const rects = [
       ...COMMON_WALLS,
       { kind: 'sand', x: 2, y: 12, w: 44, h: 20 },
@@ -226,17 +242,16 @@
       { kind: 'sand', x: 8, y: 116, w: 32, h: 18 },
       { kind: 'wall', x: 2, y: 34 + (variant % 3), w: 10, h: 2 },
       { kind: 'wall', x: 34, y: 34 + (variant % 4), w: 12, h: 2 },
-      { kind: 'wall', x: 12, y: 68, w: 7, h: 2 },
-      { kind: 'wall', x: 30, y: 68, w: 8, h: 2 },
-      { kind: 'wall', x: 4, y: 112, w: 10, h: 2 },
-      { kind: 'wall', x: 34, y: 112, w: 10, h: 2 }
+      ...barrierWithOpening(route.midY, route.midOpenX, route.openWidth),
+      ...barrierWithOpening(route.finalY, route.finalOpenX, route.openWidth)
     ];
     if (variant === 7) rects.push({ kind: 'wall', x: 22, y: 94, w: 4, h: 28 });
     const carves = [
       { x: 11, y: 14, rx: 30, ry: 14 }, { x: 24, y: 14, rx: 32, ry: 14 }, { x: 37, y: 14, rx: 30, ry: 14 },
       { x: 10, y: 50, rx: 28, ry: 84 }, { x: 24, y: 51, rx: 22, ry: 82 }, { x: 38, y: 50, rx: 28, ry: 84 },
-      { x: rightRisk ? 37 : 11, y: 88, rx: 26, ry: 90 }, { x: 24, y: 96, rx: variant === 7 ? 16 : 34, ry: 94 },
-      { x: Math.round((goalX + 64) / CELL_W), y: 124, rx: 58, ry: 36 }
+      { x: route.midOpenX + route.openWidth / 2, y: 86, rx: 28, ry: 58 },
+      { x: 24, y: 94, rx: variant === 7 ? 16 : 24, ry: 34 },
+      { x: route.finalOpenX + route.openWidth / 2, y: 122, rx: 42, ry: 62 }
     ];
     const traps = [
       { x: rightRisk ? 236 : 24, y: 330 + variant * 6, w: 62, h: 30, type: 'danger' },
@@ -250,7 +265,23 @@
     if (variant === 4 || variant === 9 || variant === 10) mechanisms.push({ kind: 'rotor', x: 236, y: 610, len: 76, angle: 0.2, speed: 1.8 });
     if (variant === 5 || variant === 10) mechanisms.push({ kind: 'bar', x: 150, y: 678, w: 92, h: 10, min: 108, max: 270, speed: 40, dir: -1 });
     if (variant === 9) mechanisms.push({ kind: 'rotor', x: 150, y: 700, len: 86, angle: -0.3, speed: -1.9 });
-    return { id: 'legacy-' + variant, name, shortName, rects, carves, traps, mechanisms, goal: { x: goalX, y: 840, w: leftGoal ? 128 : 116, h: 68 } };
+    const leftGoal = route.goalSide === 'left';
+    const routeHints = leftGoal
+      ? [
+          { x: 190, y: 430, w: 110, text: 'まず右へ →', tone: 'decision' },
+          { x: 18, y: 690, w: 112, text: '← 左の狐へ', tone: 'decision' }
+        ]
+      : [
+          { x: 18, y: 430, w: 112, text: '← まず左へ', tone: 'decision' },
+          { x: 188, y: 690, w: 112, text: '右の狐へ →', tone: 'decision' }
+        ];
+    return {
+      id: 'legacy-' + variant, name, shortName, rects, carves, traps, mechanisms,
+      routePattern: route,
+      strategyHint: leftGoal ? '中段で右へ振り、最後は左の狐へ' : '中段で左へ振り、最後は右の狐へ',
+      routeHints,
+      goal: { x: goalX, y: 840, w: 116, h: 68 }
+    };
   }
   const STAGES = [
     makeStageOne(),
@@ -288,6 +319,28 @@
   function stageHasWallAt(stage, x, y) {
     return stage.rects.some(r => r.kind === 'wall' && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
   }
+  function barrierMatchesOpening(stage, y, openX, openWidth) {
+    for (let x = 2; x < 46; x++) {
+      const shouldBeWall = x < openX || x >= openX + openWidth;
+      if (stageHasWallAt(stage, x, y) !== shouldBeWall) return false;
+    }
+    return true;
+  }
+  function validateOffsetGoal(stage) {
+    const warnings = [];
+    const route = stage.routePattern;
+    if (!route) return ['左右ゴール用routePatternがない: ' + stage.name];
+    const goalCenter = stage.goal.x + stage.goal.w / 2;
+    if (goalCenter >= 120 && goalCenter <= 200) warnings.push('狐が中央帯に残っている: ' + stage.name);
+    const actualSide = goalCenter < VIEW_W / 2 ? 'left' : 'right';
+    if (route.goalSide !== actualSide) warnings.push('routePatternと狐の左右が一致しない: ' + stage.name);
+    if (route.midOpenX === route.finalOpenX) warnings.push('中段と最終開口が同じ側: ' + stage.name);
+    if (!barrierMatchesOpening(stage, route.midY, route.midOpenX, route.openWidth)) warnings.push('中段障壁が指定開口と一致しない: ' + stage.name);
+    if (!barrierMatchesOpening(stage, route.finalY, route.finalOpenX, route.openWidth)) warnings.push('最終障壁が指定開口と一致しない: ' + stage.name);
+    const finalCenter = route.finalOpenX + route.openWidth / 2;
+    if ((actualSide === 'left' && finalCenter >= 24) || (actualSide === 'right' && finalCenter <= 24)) warnings.push('最終開口が狐と反対側: ' + stage.name);
+    return warnings;
+  }
   function countTypes(list) {
     return list.reduce((acc, type) => { acc[type] = (acc[type] || 0) + 1; return acc; }, {});
   }
@@ -317,10 +370,7 @@
     if (middle.red !== 5 || middle.blue !== 5) warnings.push('中央室は赤5・青5である必要');
     if (right.black !== 4 || right.red !== 4 || right.blue !== 2) warnings.push('右室は黒4・赤4・青2である必要');
     if (!stageHasWallAt(stage, 17, 10) || !stageHasWallAt(stage, 31, 10)) warnings.push('上層の室仕切りが不足');
-    if (!stageHasWallAt(stage, 24, 66)) warnings.push('第2障壁の中央が開いている');
-    if (stageHasWallAt(stage, 24, 102)) warnings.push('第3障壁の中央開口が塞がっている');
     for (const x of [8, 27, 40]) if (stageHasWallAt(stage, x, 34)) warnings.push('第1障壁の室別出口が塞がっている: ' + x);
-    for (const x of [10, 36]) if (stageHasWallAt(stage, x, 66)) warnings.push('第2障壁の左右開口が塞がっている: ' + x);
     const spawnPoints = Array.from({ length: TOTAL }, (_, i) => stageSpawnPosition(stage, i));
     for (let i = 0; i < spawnPoints.length; i++) {
       if (spawnIntersectsStageWall(stage, spawnPoints[i])) warnings.push('初期配置が固定壁へ接触している: ' + i);
@@ -333,7 +383,7 @@
     return warnings;
   }
   function validateAllStages() {
-    const warnings = STAGES.flatMap(stage => [...validateStageGoalAccess(stage), ...validateStageOneStrategy(stage)]);
+    const warnings = STAGES.flatMap(stage => [...validateStageGoalAccess(stage), ...validateStageOneStrategy(stage), ...validateOffsetGoal(stage)]);
     if (warnings.length) console.warn('[tabakon] stage warnings', warnings);
     return warnings;
   }
@@ -1139,7 +1189,12 @@
   function drawGoal() {
     ctx.fillStyle = 'rgba(73,158,95,.26)'; roundRect(goal.x, goal.y, goal.w, goal.h, 12, true);
     ctx.strokeStyle = '#2f8f68'; ctx.lineWidth = 3; roundRect(goal.x + 2, goal.y + 2, goal.w - 4, goal.h - 4, 10, false, true);
-    ctx.font = '36px serif'; ctx.fillText('🦊', goal.x + 29, goal.y + 38);
+    ctx.save();
+    ctx.font = '36px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🦊', goal.x + goal.w / 2, goal.y + goal.h / 2 + 2);
+    ctx.restore();
   }
   function drawCig(cig) {
     const cfg = TYPES[cig.type];
